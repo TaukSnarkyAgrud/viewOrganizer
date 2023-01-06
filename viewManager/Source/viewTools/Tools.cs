@@ -7,9 +7,10 @@ namespace viewTools
 {
     public class Tools
     {
+        public List<WindowMetadata> windows_KnownActive;
         public List<Process> GetAllProcessesWithWindows()
         {
-            return Process.GetProcesses().Where(p => string.IsNullOrEmpty(p.MainWindowTitle) == false).ToList();
+            return Process.GetProcesses().Where(p => (int)p.MainWindowHandle != 0).ToList();
         }
 
         public void PrintAllProcessesWithWindows()
@@ -45,9 +46,9 @@ namespace viewTools
             }
         }
 
-        public Process GetWindowProcessContains(string subString)
+        public Process GetWindowProcessMatchTitleWord(string subString)
         {
-            var possibleProcs = GetWindowProcessesContains(subString);
+            var possibleProcs = GetWindowProcessesMatchTitleWord(subString);
             if (possibleProcs.Count == 1)
             {
                 return possibleProcs.FirstOrDefault();
@@ -63,7 +64,12 @@ namespace viewTools
             return new Process();
         }
 
-        public List<Process> GetWindowProcessesContains(string subString)
+        public IntPtr GetWindowHandleMatchTitleWord(string subString)
+        {
+            return GetWindowProcessMatchTitleWord(subString).MainWindowHandle;
+        }
+
+        public List<Process> GetWindowProcessesMatchTitleWord(string subString)
         {
             var viableProcs = new List<Process>();
             foreach (var proc in GetAllProcessesWithWindows())
@@ -81,9 +87,36 @@ namespace viewTools
             WindowsAPITools.ConfigureWindowSizePosition(hwnd, x, y);
         }
 
+        public void BringWindowTop(IntPtr hwnd)
+        {
+            WindowsAPITools.MinimizeWindow(hwnd);
+            WindowsAPITools.RestoreWindow(hwnd);
+            WindowsAPITools.BringWindowToTop(hwnd);
+        }
+
+        public void RemoveTitleBar(IntPtr hwnd)
+        {
+            WindowsAPITools.RemoveTitlebar(hwnd);
+        }
+
+        // https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#size-and-position-messages
+
         //Get child windows
         //Get VS window and children
         //Get explorer windows
-        //Get ignore handles
+        //Identify ignore handles
+
+        // implement "stapled" so that a window group is in the same zaxis
+        // method for bring to top
+
+        //Consider converting function calls to messages
+        // https://learn.microsoft.com/en-us/windows/win32/winmsg/about-messages-and-message-queues#windows-messages
+
+        // TODO: implement method to remove window titlebars
+
+        //idea for identifying ghost windows: 
+        //    See if left top right bottom is way out of screen bounds
+        //    If all, top left right bottom are 0
+
     }
 }

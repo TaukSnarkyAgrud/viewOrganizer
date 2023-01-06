@@ -1,14 +1,13 @@
 ﻿using System;
-using System.Diagnostics;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace viewTools
 {
     class WindowsAPITools
     {
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        public  delegate bool EnumWindowProc(IntPtr hwnd, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -37,6 +36,18 @@ namespace viewTools
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool GetWindowPlacement(IntPtr hWnd, out WINDOWPLACEMENT wPlmt);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool EnumChildWindows(IntPtr window, EnumWindowProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.I8)]
+        public static extern long SetWindowLongA(IntPtr window, int nIndex, long dwNewLong);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool BringWindowToTop(IntPtr window);
 
         public struct RECT
 
@@ -118,6 +129,20 @@ namespace viewTools
             FORCEMINIMIZE = 11,
         }
 
+        enum WindowLongFlags : int
+        {
+            GWL_EXSTYLE = -20,
+            GWLP_HINSTANCE = -6,
+            GWLP_HWNDPARENT = -8,
+            GWL_ID = -12,
+            GWL_STYLE = -16,
+            GWL_USERDATA = -21,
+            GWL_WNDPROC = -4,
+            DWLP_USER = 0x8,
+            DWLP_MSGRESULT = 0x0,
+            DWLP_DLGPROC = 0x4
+        }
+
         public static void ConfigureWindowSizePosition(IntPtr hwnd, int x = 0, int y = 0, int nWidth = 200, int nHeight = 100)
         {
             var success = MoveWindow(hwnd, x, y, nWidth, nHeight, true);
@@ -125,6 +150,11 @@ namespace viewTools
             {
                 Console.WriteLine(Marshal.GetLastWin32Error());
             }
+        }
+
+        public static void RemoveTitlebar(IntPtr hwnd)
+        {
+            SetWindowLongA(hwnd, (int)WindowLongFlags.GWL_STYLE, 0x00C00000L);
         }
 
         public static void HideWindow(IntPtr hwnd)
@@ -192,6 +222,42 @@ namespace viewTools
             }
 
             return Enum.GetName(typeof(ShowWindowCommands), placement.showCmd);
+        }
+
+        // https://stackoverflow.com/questions/1363167/how-can-i-get-the-child-windows-of-a-window-given-its-hwnd
+        public List<IntPtr> GetAllChildHandles(IntPtr hwnd)
+        {
+            List<IntPtr> childHandles = new List<IntPtr>();
+
+            GCHandle gcChildhandlesList = GCHandle.Alloc(childHandles);
+            IntPtr pointerChildHandlesList = GCHandle.ToIntPtr(gcChildhandlesList);
+
+            try
+            {
+                EnumWindowProc childProc = new EnumWindowProc(EnumWindow);
+                EnumChildWindows(hwnd, childProc, pointerChildHandlesList);
+            }
+            finally
+            {
+                gcChildhandlesList.Free();
+            }
+
+            return childHandles;
+        }
+
+        private bool EnumWindow(IntPtr hWnd, IntPtr lParam)
+        {
+            GCHandle gcChildhandlesList = GCHandle.FromIntPtr(lParam);
+
+            if (gcChildhandlesList == null || gcChildhandlesList.Target == null)
+            {
+                return false;
+            }
+
+            List<IntPtr> childHandles = gcChildhandlesList.Target as List<IntPtr>;
+            childHandles.Add(hWnd);
+
+            return true;
         }
     }
 }

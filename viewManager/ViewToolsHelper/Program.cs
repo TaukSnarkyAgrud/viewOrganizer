@@ -9,9 +9,12 @@ namespace ViewToolsHelper
             var aObj = new Tools();
             aObj.PrintAllProcessesWithWindows();
 
-            var testWindow = aObj.GetWindowProcessContains("Notepad");
+            var testHandle = aObj.GetWindowHandleMatchTitleWord("Notepad");
 
-            aObj.ConfigureWindowSizePosition(testWindow.MainWindowHandle, 0, 0);
+            Console.WriteLine(testHandle);
+
+            aObj.BringWindowTop(testHandle);
+            aObj.RemoveTitleBar(testHandle);
         }
     }
 }
