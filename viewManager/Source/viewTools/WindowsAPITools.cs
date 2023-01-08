@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
+using static viewTools.DataStructs;
 
 namespace viewTools
 {
     class WindowsAPITools
     {
-
-        public  delegate bool EnumWindowProc(IntPtr hwnd, IntPtr lParam);
+        public delegate bool EnumWindowProc(IntPtr hwnd, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -42,12 +44,21 @@ namespace viewTools
         public static extern bool EnumChildWindows(IntPtr window, EnumWindowProc callback, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.I8)]
         public static extern long SetWindowLongA(IntPtr window, int nIndex, long dwNewLong);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool BringWindowToTop(IntPtr window);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr FindWindowExA(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string lpszWindow);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr GetParent(IntPtr hwnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.SysInt)]
+        public static extern int GetWindowTextA(IntPtr hwnd, out string lpString, int nMaxCount);
 
         public struct RECT
 
@@ -60,26 +71,6 @@ namespace viewTools
             public int Right;       // x position of lower-right corner
 
             public int Bottom;      // y position of lower-right corner
-
-        }
-
-        public struct WINDOW_POSITION
-
-        {
-
-            public int Left;        // x position of upper-left corner
-
-            public int Top;         // y position of upper-left corner
-
-        }
-
-        public struct WINDOW_SIZE
-
-        {
-
-            public int Width;        // x position of lower-right corner
-
-            public int Height;         // y position of lower-right corner
 
         }
 
@@ -113,22 +104,6 @@ namespace viewTools
 
         }
 
-        private enum ShowWindowCommands : int
-        {
-            Hide = 0,
-            Normal = 1,
-            Minimized = 2,
-            MAXIMIZE = 3,
-            SHOWNOACTIVATE = 4,
-            SHOW = 5,
-            MINIMIZE = 6,
-            SHOWMINNOACTIVE = 7,
-            SHOWNA = 8,
-            RESTORE = 9,
-            SHOWDEFAULT = 10,
-            FORCEMINIMIZE = 11,
-        }
-
         enum WindowLongFlags : int
         {
             GWL_EXSTYLE = -20,
@@ -143,18 +118,67 @@ namespace viewTools
             DWLP_DLGPROC = 0x4
         }
 
+        public static IntPtr GetParentWrapper(IntPtr hwnd)
+        {
+            // TODO: Add optimizaion of caching values from calles; make the values in the list have a time to live
+            return GetParent(hwnd);
+        }
+
+        public static IntPtr FindWindowExAWrapper(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string lpszWindow)
+        {
+            // TODO: Add optimizaion of caching values from calles; make the values in the list have a time to live
+            return FindWindowExA(hWndParent, hWndChildAfter, lpszClass, lpszWindow);
+        }
+
+        public static WINDOW_POSITION GetWindowPosition(IntPtr hwnd)
+        {
+            bool success = GetWindowRect(hwnd, out RECT position);
+            if (!success)
+            {
+                Debug.WriteLine(Marshal.GetLastWin32Error());
+            }
+
+            var posi = new WINDOW_POSITION();
+            posi.Top = position.Top;
+            posi.Left = position.Left;
+
+            return posi;
+        }
+
+        public static WINDOW_SIZE GetWindowSize(IntPtr hwnd)
+        {
+            var position = new RECT();
+            bool success = GetWindowRect(hwnd, out position);
+            if (!success)
+            {
+                Debug.WriteLine(Marshal.GetLastWin32Error());
+            }
+
+            var size = new WINDOW_SIZE();
+            size.Width = position.Bottom - position.Top;
+            size.Height = position.Right - position.Left;
+
+            return size;
+        }
+
         public static void ConfigureWindowSizePosition(IntPtr hwnd, int x = 0, int y = 0, int nWidth = 200, int nHeight = 100)
         {
             var success = MoveWindow(hwnd, x, y, nWidth, nHeight, true);
             if (!success)
             {
-                Console.WriteLine(Marshal.GetLastWin32Error());
+                Debug.WriteLine(Marshal.GetLastWin32Error());
             }
         }
 
-        public static void RemoveTitlebar(IntPtr hwnd)
+        public static string GetWindowViewState(IntPtr hwnd)
         {
-            SetWindowLongA(hwnd, (int)WindowLongFlags.GWL_STYLE, 0x00C00000L);
+            bool success = GetWindowPlacement(hwnd, out WINDOWPLACEMENT placement);
+            if (!success)
+            {
+                Debug.WriteLine(Marshal.GetLastWin32Error());
+            }
+
+            return Enum.GetName(typeof(ShowWindowCommands), placement.showCmd);
         }
 
         public static void HideWindow(IntPtr hwnd)
@@ -182,50 +206,51 @@ namespace viewTools
             ShowWindow(hwnd, (int)ShowWindowCommands.FORCEMINIMIZE);
         }
 
-        public static WINDOW_POSITION GetWindowPosition(IntPtr hwnd)
+        public static IntPtr GetAnyWindowByClass(string className)
         {
-            bool success = GetWindowRect(hwnd, out RECT position);
-            if (!success)
-            {
-                Console.WriteLine(Marshal.GetLastWin32Error());
-            }
-
-            var posi = new WINDOW_POSITION();
-            posi.Top = position.Top;
-            posi.Left = position.Left;
-
-            return posi;
+            return FindWindowExA(IntPtr.Zero, IntPtr.Zero, lpszClass: className, null);
         }
 
-        public static WINDOW_SIZE GetWindowSize(IntPtr hwnd)
+        public static IntPtr GetAnyChromeWigetHandle()
         {
-            var position = new RECT();
-            bool success = GetWindowRect(hwnd, out position);
-            if (!success)
-            {
-                Console.WriteLine(Marshal.GetLastWin32Error());
-            }
-
-            var size = new WINDOW_SIZE();
-            size.Width = position.Bottom - position.Top;
-            size.Height = position.Right - position.Left;
-
-            return size;
+            return GetAnyWindowByClass("Chrome_WidgetWin_1");
         }
 
-        public static string GetWindowViewState(IntPtr hwnd)
+        public static void GetAllChromeWigetHandles()
         {
-            bool success = GetWindowPlacement(hwnd, out WINDOWPLACEMENT placement);
-            if (!success)
+            var wgts = new List<IntPtr>
             {
-                Console.WriteLine(Marshal.GetLastWin32Error());
+                GetAnyWindowByClass("Chrome_WidgetWin_1")
+            };
+
+
+            var frsthdl = wgts.First();
+            var sibling = frsthdl;
+            while ((int)sibling != 0)
+            {
+                if (sibling != frsthdl)
+                {
+                    wgts.Add(sibling);
+                }
+
+                sibling = WindowsAPITools.FindWindowExAWrapper(IntPtr.Zero, sibling, "Chrome_WidgetWin_1", null);
             }
 
-            return Enum.GetName(typeof(ShowWindowCommands), placement.showCmd);
+            foreach (var item in wgts)
+            {
+                new WindowMetadata(item);
+            }
         }
+
+
+
+
+
+
+        // Unverified Methods
 
         // https://stackoverflow.com/questions/1363167/how-can-i-get-the-child-windows-of-a-window-given-its-hwnd
-        public List<IntPtr> GetAllChildHandles(IntPtr hwnd)
+        public static List<IntPtr> GetAllChildHandles(IntPtr hwnd)
         {
             List<IntPtr> childHandles = new List<IntPtr>();
 
@@ -245,7 +270,7 @@ namespace viewTools
             return childHandles;
         }
 
-        private bool EnumWindow(IntPtr hWnd, IntPtr lParam)
+        private static bool EnumWindow(IntPtr hWnd, IntPtr lParam)
         {
             GCHandle gcChildhandlesList = GCHandle.FromIntPtr(lParam);
 
@@ -258,6 +283,11 @@ namespace viewTools
             childHandles.Add(hWnd);
 
             return true;
+        }
+
+        public static void RemoveTitlebar(IntPtr hwnd)
+        {
+            SetWindowLongA(hwnd, (int)WindowLongFlags.GWL_STYLE, 0x00C00000L);
         }
     }
 }

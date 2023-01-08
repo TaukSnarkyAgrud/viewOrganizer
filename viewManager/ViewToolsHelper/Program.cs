@@ -1,4 +1,5 @@
-﻿using viewTools;
+﻿using System.Diagnostics;
+using viewTools;
 
 namespace ViewToolsHelper
 {
@@ -7,14 +8,21 @@ namespace ViewToolsHelper
         static void Main(string[] args)
         {
             var aObj = new Tools();
-            aObj.PrintAllProcessesWithWindows();
 
-            var testHandle = aObj.GetWindowHandleMatchTitleWord("Notepad");
-
-            Console.WriteLine(testHandle);
-
-            aObj.BringWindowTop(testHandle);
-            aObj.RemoveTitleBar(testHandle);
+            aObj.GetChromeWindows();
+            Debug.WriteLine("Window Object {handle} {title} {mainProcess} {children} {position} {size} {ViewState} {hasIntermediateParent} {immediateParentHandle} {isViableWindow}");
+            Debug.WriteLine("-------------------------------------------------------------------------------------------------------------------------------------------------------------------------");
+            foreach (var item in WindowMetadata.RootWindows.Values.ToList<WindowMetadata>())
+            {
+                Debug.WriteLine(item);
+                if (item.children != null)
+                {
+                    foreach (var child in item.children.Values.ToList<WindowMetadata>())
+                    {
+                        Debug.WriteLine(child);
+                    }
+                }
+            }
         }
     }
 }
