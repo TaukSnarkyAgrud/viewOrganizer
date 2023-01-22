@@ -1,0 +1,431 @@
+$requestedStreamers = @{}
+$availableStreamers = [ordered]@{
+    poolfb="https://www.facebook.com/PoolsharkGaming/live";
+    pooltw="https://player.twitch.tv/?channel=thepoolshark&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    lupo="https://www.youtube.com/DrLupo/live";
+    trip="https://player.twitch.tv/?channel=triple_g&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    fab="https://player.twitch.tv/?channel=notfabtv&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    paul="https://player.twitch.tv/?channel=actionjaxon&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    fudgexl="https://player.twitch.tv/?channel=fudgexl&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    tim="https://www.facebook.com/Darkness429/live";
+    jenn="https://player.twitch.tv/?channel=jenntacles&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    aims="https://player.twitch.tv/?channel=aims&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    pestily="https://player.twitch.tv/?channel=pestily&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    tweety="https://player.twitch.tv/?channel=tweetyexpert&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    hodsy="https://player.twitch.tv/?channel=hodsy&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    bearkiLauren="https://player.twitch.tv/?channel=bearki&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    AnneMunition="https://player.twitch.tv/?channel=AnneMunition&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    mr___meme="https://player.twitch.tv/?channel=mr___meme&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    mugs="https://www.facebook.com/MugsTV/live";
+    cali="https://player.twitch.tv/?channel=caliverse&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    clintus="https://player.twitch.tv/?channel=clintus&enableExtensions=true&muted=false&parent=twitch.tv&player=popout&volume=0";
+    drdisrespect="https://www.youtube.com/drdisrespect/live";
+    test="https://www.google.com"
+
+}
+$test=0
+
+#TODO: check arguments for specific names
+foreach ($a in $args){
+    if ($a = "test") {
+        $test = $test + 1
+    }
+    else{
+        if ($a -in $availableStreamers.Keys) {
+            $requestedStreamers.Add($a, $availableStreamers[$a]);
+        }
+        else {
+            Write-Output($a + "does not map to an available streamer")
+            exit
+        }
+    }
+}
+
+if ($requestedStreamers.Count -eq 0 -and $test -eq 0) {
+    $selection = $availableStreamers.Keys | Out-GridView -OutputMode Multiple
+    Write-Output("`nSelection:" + $d)
+    foreach($d in $selection){
+        Write-Output($d)
+        $requestedStreamers.Add($d, $availableStreamers[$d])
+    }
+}
+
+if ($requestedStreamers.Count -gt 6) {
+    Write-Output("ERROR too many streams requested")
+    exit
+}
+
+foreach($r in $requestedStreamers.Keys){
+    Write-Output($r)
+    if ($requestedStreamers[$r] -eq "") {
+        Write-Output("ERROR streamer url not set")
+        exit
+    }
+}
+
+foreach($a in $requestedStreamers.Clone().GetEnumerator()){
+    Write-Output("RequestedStreams are: " + $a.Name + " at URL:" + $a.Value)
+    if ($a.Value -like "*youtube*") {
+        Write-Output("YT link Found for convert: " + $a.Value)
+        $GetRest=Invoke-RestMethod -Uri $a.Value
+        $GetRest -match '(?<V>https:\/\/www\.youtube\.com\/watch\?v=[\w\-]+)"'
+        #Write-Output($matching)
+        #Write-Output($Matches["V"])
+        $requestedStreamers[$a.Name] = $Matches["V"]
+        Write-Output("YT link converted for: " + $a.Name)
+        Write-Output("Cheking this--->: " + $requestedStreamers[$a.Name])
+    }
+}
+
+$testNomoni = @("testAlpha","testBeta","testGamma","testDelta","testEpsilon","testZeta")
+
+if ($test -gt 0 -and $test -lt 7) {
+    $requestedStreamers.Clear()
+    for ($i = 0; $i -lt $test; $i++) {
+        $requestedStreamers.Add($testNomoni[$i], $availableStreamers["test"])
+    }
+}
+#TODO: clear active windows and slots taken
+#TODO: get screen restrictions
+Write-Output("Adding Type")
+Add-Type -AssemblyName System.Windows.Forms
+#[int]$screenW=[System.Windows.Forms.Screen]::AllScreens.WorkingArea.Width
+#$screenH=[System.Windows.Forms.Screen]::AllScreens.WorkingArea.Height
+$screenW=1936
+$screenWDivided2=[math]::ceiling($screenW/2)
+$screenWDivided3=[math]::ceiling($screenW/3)
+$screenH=1100
+$screenHDivided2=[math]::ceiling($screenH/2)
+
+$upperLeftOrigin = @{
+    x=0;
+    y=0
+}
+
+# $upperLeftOrigin = @{
+#     x=-2;
+#     y=-8
+# }
+
+
+
+Write-Output("Type Added. `n`nWidth: ${screenW}")
+
+#TODO: resolve set of argument lists for each stream
+$argumentList=New-Object System.Collections.Generic.List[System.Object]
+$mapStreams1t6=@{
+    1=@{
+        sizes=
+        @(
+            @{
+                    width=$screenW; 
+                    height=$screenH
+            }
+        ); 
+        positions=
+        @(
+            $upperLeftOrigin
+        )
+    };
+    2=@{
+        sizes=
+        @(
+            @{
+                    width=$screenW; 
+                    height=$screenHDivided2
+            }
+        ); 
+        positions=
+        @(
+            @{
+                x=-8;
+                y=$screenHDivided2
+            },
+            $upperLeftOrigin
+        )
+    };
+    3=@{
+        sizes=
+        @(
+            @{
+                    width=$screenW; 
+                    height=$screenHDivided2
+            },
+            @{
+                width=$screenWDivided2; 
+                height=$screenHDivided2
+            }
+        ); 
+        positions=
+        @(
+            @{
+                x=0;
+                y=$screenHDivided2
+            },
+            $upperLeftOrigin,
+            @{
+                x=$screenWDivided2;
+                y=0
+            }
+        )
+    };
+    4=@{
+        sizes=
+        @(
+            @{
+                width=$screenWDivided2; 
+                height=$screenHDivided2
+            }
+        ); 
+        positions=
+        @(
+            @{
+                x=0;
+                y=$screenHDivided2
+            },
+            @{
+                x=$screenWDivided2;
+                y=$screenHDivided2
+            },
+            $upperLeftOrigin,
+            @{
+                x=$screenWDivided2;
+                y=0
+            }
+        )
+    };
+    5=@{
+        sizes=
+        @(
+            @{
+                width=$screenWDivided2; 
+                height=$screenHDivided2
+            },
+            @{
+                width=$screenWDivided3; 
+                height=$screenHDivided2
+            }
+        ); 
+        positions=
+        @(
+            @{
+                x=0;
+                y=$screenHDivided2
+            },
+            @{
+                x=$screenWDivided2;
+                y=$screenHDivided2
+            },
+            $upperLeftOrigin,
+            @{
+                x=$screenWDivided3;
+                y=0
+            },
+            @{
+                x=2*($screenWDivided3);
+                y=0
+            }
+        )
+    };
+    6=@{
+        sizes=
+        @(
+            @{
+                width=$screenWDivided3; 
+                height=$screenHDivided2
+        }
+        ); 
+        positions=
+        @(
+            @{
+                x=0;
+                y=$screenHDivided2
+            },
+            @{
+                x=$screenWDivided3;
+                y=$screenHDivided2
+            },
+            @{
+                x=2*($screenWDivided3);
+                y=$screenHDivided2
+            },
+            $upperLeftOrigin,
+            @{
+                x=$screenWDivided3;
+                y=0
+            },
+            @{
+                x=2*($screenWDivided3);
+                y=0
+            }
+        )
+    };
+}
+
+$focusedVec = ""
+$preambleWithLoc='--app="data:text/html,<html><body><script>window.moveTo('
+$sz=");window.resizeTo("
+$adr=");window.location='"
+$close=';</script></body></html>"'
+$selectedStream = 0
+
+switch ($requestedStreamers.Count) {
+    1 {
+        foreach($a in $requestedStreamers.GetEnumerator()){
+            $focusedVec=
+                $preambleWithLoc +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][0]['x'] +
+                "," +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][0]['y'] +
+                 $sz +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['width'] +
+                 "," +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['height'] +
+                 $adr +
+                 $a.Value +
+                "'" + $close
+
+            $argumentList.Add($focusedVec)
+        }
+    }
+    2 {
+        foreach($a in $requestedStreamers.GetEnumerator()){
+            $focusedVec=
+                $preambleWithLoc +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedStream]['x'] +
+                "," +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedStream]['y'] +
+                 $sz +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['width'] +
+                 "," +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['height'] +
+                 $adr +
+                 $a.Value +
+                "'" + $close
+  
+            $argumentList.Add($focusedVec)
+            $selectedStream = $selectedStream + 1
+        }
+    }
+    3 {
+        foreach($a in $requestedStreamers.GetEnumerator()){
+            $selectedS=0
+            $selectedP=0
+            if ($selectedStream -gt 1) {
+                $selectedS=1
+                $selectedP=2
+            }
+            else{
+                $selectedS=$selectedStream
+                $selectedP=$selectedStream
+            }
+            $focusedVec=
+                $preambleWithLoc +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedP]['x'] +
+                "," +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedP]['y'] +
+                 $sz +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][$selectedS]['width'] +
+                 "," +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][$selectedS]['height'] +
+                 $adr +
+                 $a.Value +
+                "'" + $close
+  
+            $argumentList.Add($focusedVec)
+            $selectedStream = $selectedStream + 1
+        }
+    }
+    4 {
+        foreach($a in $requestedStreamers.GetEnumerator()){
+            $focusedVec=
+                $preambleWithLoc +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedStream]['x'] +
+                "," +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedStream]['y'] +
+                 $sz +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['width'] +
+                 "," +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['height'] +
+                 $adr +
+                 $a.Value +
+                "'" + $close
+            
+            $argumentList.Add($focusedVec)
+            $selectedStream = $selectedStream + 1
+        }
+    }
+    5 {
+        foreach($a in $requestedStreamers.GetEnumerator()){
+            $selectedS=0
+            $selectedP=0
+            if ($selectedStream -gt 1) {
+                $selectedS=1
+            }
+            else{
+                $selectedS=$selectedStream
+            }
+            if ($selectedStream -eq 1) {
+                $selectedS=0
+            }
+            $selectedP=$selectedStream
+            $focusedVec=
+                $preambleWithLoc +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedP]['x'] +
+                "," +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedP]['y'] +
+                 $sz +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][$selectedS]['width'] +
+                 "," +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][$selectedS]['height'] +
+                 $adr +
+                 $a.Value +
+                "'" + $close
+            
+            $argumentList.Add($focusedVec)
+            $selectedStream = $selectedStream + 1
+        }
+    }
+    6 {
+        foreach($a in $requestedStreamers.GetEnumerator()){
+            $focusedVec=
+                $preambleWithLoc +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedStream]['x'] +
+                "," +
+                $mapStreams1t6[$requestedStreamers.Count]["positions"][$selectedStream]['y'] +
+                 $sz +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['width'] +
+                 "," +
+                 $mapStreams1t6[$requestedStreamers.Count]["sizes"][0]['height'] +
+                 $adr +
+                 $a.Value +
+                "'" + $close
+            
+            $argumentList.Add($focusedVec)
+            $selectedStream = $selectedStream + 1
+        }
+    }
+    Default {}
+}
+
+#TODO: spawn requeted streams in the correct place
+$activeStreams = 0
+if ($test -eq 0) {
+    Write-Output($requestedStreamers)
+    foreach($a in $requestedStreamers.GetEnumerator()){
+        Write-Output("`nStarting stream: " + $argumentList[$activeStreams] + "`n`n")
+        Start-Sleep -s 1
+        & 'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe' $argumentList[$activeStreams]
+        $activeStreams = $activeStreams + 1
+    }
+}
+else{
+    Write-Output("TestStreams Enabled: ${test}")
+    foreach($a in $requestedStreamers.GetEnumerator()){
+        Write-Output("`nStarting stream: " + $argumentList[$activeStreams] + "`n`n")
+        Start-Sleep -s 1
+        & 'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe' $argumentList[$activeStreams]
+        $activeStreams = $activeStreams + 1
+    }
+}
+

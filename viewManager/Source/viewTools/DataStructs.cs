@@ -1,42 +1,45 @@
-﻿using System.Drawing;
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Windows.Forms;
 
 namespace viewTools
 {
     public class DataStructs
     {
-        public struct WINDOW_POSITION
-
-        {
-
-            public int Left;        // x position of upper-left corner
-
-            public int Top;         // y position of upper-left corner
-
-            public static implicit operator int(WINDOW_POSITION p) => p.Left == 0 && p.Top == 0 ? 0 : -1;
-
-            public override string ToString()
+        public static Dictionary<double, string> AspectRatio = new Dictionary<double, string>()
             {
-                return $"({Left},{Top})";
-            }
-
-        }
-
-        public struct WINDOW_SIZE
-
-        {
-
-            public int Width;        // x position of lower-right corner
-
-            public int Height;         // y position of lower-right corner
-
-            public static implicit operator int(WINDOW_SIZE s) => s.Width == 0 && s.Height == 0 ? 0 : -1;
-
-            public override string ToString()
-            {
-                return $"({Width},{Height})";
-            }
-
-        }
+                { 0, "Unknown" },
+                { 0.461938, "16:3" },
+                { 0.5625, "9:16" },
+                { 0.6, "3:5" },
+                { 0.6666, "2:3" },
+                { 1, "1:1" },
+                { 1.19, "19:16" },
+                { 1.25, "5:4" },
+                { 1.3333, "4:3" },
+                { 1.375, "11:8" },
+                { 1.43, "1p43:1" },
+                { 1.5, "3:2" },
+                { 1.56, "14:9" },
+                { 1.6, "16:10" },
+                { 1.618, "φ:1" },
+                { 1.6666, "5:3" },
+                { 1.7777, "16:9" },
+                { 1.85, "1p85:1" },
+                { 1.9, "1p9:1" },
+                { 2, "2:1" },
+                { 2.2, "2p2:1" },
+                { 2.35, "2p35:1" },
+                { 2.370370, "64:27" },
+                { 2.39, "2p39:1" },
+                { 2.4, "2p4:1" },
+                { 2.414, "δS:1" },
+                { 2.76, "2p76:1" },
+                { 3.5, "32:9" },
+                { 3.6, "18:5" },
+                { 4, "4:1" }
+            };
 
         public enum ShowWindowCommands : int
         {
@@ -53,5 +56,10 @@ namespace viewTools
             SHOWDEFAULT = 10,
             FORCEMINIMIZE = 11,
         }
+
+        public static Dictionary<string, ViewRectangle> DisplayModelExternalMargins = new Dictionary<string, ViewRectangle>()
+        {
+            { "M422i-B1", new ViewRectangle(-8,-40, 1920+8+8, 1080+40+40) }
+        };
     }
 }

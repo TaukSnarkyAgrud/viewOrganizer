@@ -1,23 +1,22 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
-using System.Xml.Linq;
+using System.Threading;
 using static viewTools.DataStructs;
 
 namespace viewTools
 {
     public class WindowMetadata
     {
-        public static Dictionary<IntPtr ,WindowMetadata> RootWindows;
-
         public IntPtr handle;
         public string title;
         public Process mainProcess;
+        public IntPtr rootParentHandle;
         public Dictionary<IntPtr, WindowMetadata> children;
 
-        public WINDOW_POSITION position;
-        public WINDOW_SIZE size;
+        public ViewRectangle rectangle;
         public string ViewState;
 
         public bool hasIntermediateParent;
@@ -25,142 +24,83 @@ namespace viewTools
 
         public bool isViableWindow = false;
 
+        public ViewPosition position
+        {
+            get
+            {
+                return rectangle.position;
+            }
+            set
+            {
+                rectangle.position = value;
+            }
+        }
+        public ViewSize size
+        {
+            get
+            {
+                return rectangle.size;
+            }
+            set
+            {
+                rectangle.size = value;
+            }
+        }
+
+
         public WindowMetadata()
         {
-
+            rectangle = new ViewRectangle();
         }
 
-        public WindowMetadata(IntPtr handle)
+        public WindowMetadata(IntPtr handle): this()
         {
             this.handle = handle;
-            WindowMetadata rootParent;
-            
-            if (IsRootParent(handle))
-            {
-                //Add the root
-                GetAddRootObject(handle, out rootParent);
-            } else
-            {
-                // Its a child of some parent, add its root
-                GetAddRootObject(GetRootParent(handle), out rootParent);
-
-                // Check if immediate parent is root or intermediate
-                hasIntermediateParent = HasIntermediateParent(handle, rootParent.handle);
-            }
-
-            // Add immediate children
-            AddImmediateChildren();
         }
+
+        public WindowMetadata(IntPtr handle, Process mainProcess):this(handle)
+        {
+            this.mainProcess = mainProcess;
+        }
+
 
         public override string ToString()
         {
-            return $"Window Object {handle} 0x{handle.ToString("x8")} | {title} | {mainProcess} | {children} | {position} | {size} | {ViewState} | {hasIntermediateParent} | {immediateParentHandle} | {isViableWindow}";
+            return $"Window Object: {GetStringOrPlaceholder(mainProcess?.ProcessName, "mainProcessName")}" +
+                $" | {GetStringOrPlaceholder(handle.ToString(), nameof(handle))} 0x{handle.ToString("x8")}" +
+                $" | {GetStringOrPlaceholder(title, nameof(title))}" +
+                $" | {GetStringOrPlaceholder(mainProcess?.Id.ToString(), "mainProcessId")}" +
+                $" | {GetStringOrPlaceholder(children?.ToString(), nameof(children))}" +
+                $"| {GetStringOrPlaceholder(position.ToString(), nameof(position))}" +
+                $" | {GetStringOrPlaceholder(size.ToString(), nameof(size))}" +
+                $" | {GetStringOrPlaceholder(ViewState, nameof(ViewState))}" +
+                $" | {GetStringOrPlaceholder(hasIntermediateParent.ToString(), nameof(hasIntermediateParent))}" +
+                $" | {GetStringOrPlaceholder(immediateParentHandle.ToString(), nameof(immediateParentHandle))}" +
+                $" | {GetStringOrPlaceholder(isViableWindow.ToString(), nameof(isViableWindow))}";
         }
 
-        private void AddImmediateChildren()
+        private object GetStringOrPlaceholder(string str, string placeholder)
         {
-            foreach (var child in GetAllChildrenFromSystem())
+            if (placeholder == "children" && string.IsNullOrEmpty(str))
             {
-                GetAddChildObject(child, out WindowMetadata _);
+                return "<Is LeafChild>";
             }
-        }
-
-        private List<IntPtr> GetAllChildrenFromSystem()
-        {
-            var childPtr = handle;
-            var childrenPtrs = new List<IntPtr>();
-            while((int)childPtr != 0)
+            if (string.IsNullOrEmpty(str))
             {
-                if (childPtr != handle)
+                return $"<{placeholder}>";
+            }
+            if (placeholder == "children")
+            {
+                var retString = "";
+                foreach (var child in children.Keys)
                 {
-                    childrenPtrs.Add(childPtr);
-                    childPtr = WindowsAPITools.FindWindowExAWrapper(handle, childPtr, null, null);
+                    retString+= child.ToString() + " " ;
                 }
-                else
-                {
-                    childPtr = WindowsAPITools.FindWindowExAWrapper(handle, IntPtr.Zero, null, null);
-                }
-
-                
+                return retString;
             }
-            return childrenPtrs;
+            return str;
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="handle"></param>
-        /// <param name="possiblyCreatedObject"></param>
-        /// <returns>True if the object was returned without being created.</returns>
-        /// <exception cref="KeyNotFoundException"></exception>
-        private bool GetAddRootObject(IntPtr handle, out WindowMetadata possiblyCreatedObject)
-        {
-            if (RootWindows == null)
-            {
-                RootWindows = new
-                    Dictionary<IntPtr, WindowMetadata>();
-            }
-            if (RootWindows.TryGetValue(handle, out WindowMetadata value))
-            {
-                possiblyCreatedObject = value;
-                return true;
-            }
-            possiblyCreatedObject = AddRootObject(handle);
-            return true;
-        }
-
-        private WindowMetadata AddRootObject(IntPtr handle)
-        {
-            position = WindowsAPITools.GetWindowPosition(handle);
-            size = WindowsAPITools.GetWindowSize(handle);
-            ViewState = WindowsAPITools.GetWindowViewState(handle);
-            filterOutNonUserWindowObjects(this);
-            HasTitle();
-            RootWindows.Add(handle, this);
-            return this;
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="handle"></param>
-        /// <param name="possiblyCreatedObject"></param>
-        /// <returns>True if the object was returned without being created.</returns>
-        /// <exception cref="KeyNotFoundException"></exception>
-        private bool GetAddChildObject(IntPtr handle, out WindowMetadata possiblyCreatedObject)
-        {
-            if (children == null)
-            {
-                children = new
-                    Dictionary<IntPtr, WindowMetadata>();
-            }
-            if (children.TryGetValue(handle, out WindowMetadata value))
-            {
-                possiblyCreatedObject = value;
-                return true;
-            }
-            possiblyCreatedObject = AddChildObject(handle);
-            return true;
-        }
-
-        private WindowMetadata AddChildObject(IntPtr handle)
-        {
-            var windowObjectCreation = new WindowMetadata();
-            windowObjectCreation.handle = handle;
-            windowObjectCreation.position = WindowsAPITools.GetWindowPosition(handle);
-            windowObjectCreation.size = WindowsAPITools.GetWindowSize(handle);
-            windowObjectCreation.ViewState = WindowsAPITools.GetWindowViewState(handle);
-            filterOutNonUserWindowObjects(windowObjectCreation);
-            windowObjectCreation.HasTitle();
-            
-            children.Add(handle, windowObjectCreation);
-            return windowObjectCreation;
-        }
-
-        private void GetChildren()
-        {
-            throw new NotImplementedException();
-        }
 
         public IntPtr GetRootParent(IntPtr hwnd)
         {
@@ -175,50 +115,44 @@ namespace viewTools
             }
         }
 
-        public bool IsRootParent(IntPtr hwnd)
+        public bool IsRootParent()
         {
-            if (GetRootParent(hwnd) == hwnd)
+            var rootPtr = GetRootParent(this.handle);
+            if (rootPtr == this.handle)
             {
                 return true;
+            } else
+            {
+                this.rootParentHandle = rootPtr;
             }
             return false;
         }
-        public IntPtr GetParent(IntPtr hwnd)
+
+        public IntPtr GetImmediateParent(IntPtr hwnd)
         {
             return WindowsAPITools.GetParentWrapper(hwnd);
         }
+
         public bool HasIntermediateParent(IntPtr hwnd, IntPtr rootHandle)
         {
-            if (rootHandle == (immediateParentHandle = GetParent(hwnd)))
+            if (rootHandle == (immediateParentHandle = GetImmediateParent(hwnd)))
             {
                 return false;
             }
             return true;
         }
 
-        public static void filterOutNonUserWindowObjects(WindowMetadata aProspectiveWindowObject)
+        public bool HasTitle()
         {
-            if (aProspectiveWindowObject.position == 0 
-                || aProspectiveWindowObject.size == 0 
-                || aProspectiveWindowObject.ViewState == ShowWindowCommands.Hide.ToString())
-            {
-                aProspectiveWindowObject.isViableWindow = false;
-                return;
-            }
-
-            if (aProspectiveWindowObject.HasTitle())
-            {
-                aProspectiveWindowObject.isViableWindow = true;
-            }
-        }
-
-        private bool HasTitle()
-        {
-            if (title == null || title.Count() > 0)
+            if (title != null && title.Count() > 0)
             {
                 return true;
             }
-            WindowsAPITools.GetWindowTextA(handle, out title, 100);
+
+            // Call external method asking api to get windows title; set title field
+            WindowsAPITools.GetWindowTextAWrapper(handle, out title, 100);
+
+            // Check if the title was set
             if (title.Count() > 0)
             {
                 return true;

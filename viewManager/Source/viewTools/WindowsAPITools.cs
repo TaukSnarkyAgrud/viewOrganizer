@@ -118,9 +118,20 @@ namespace viewTools
             DWLP_DLGPROC = 0x4
         }
 
+        public static bool GetWindowTextAWrapper(IntPtr hwnd, out string lpString, int nMaxCount)
+        {
+            var successValue = GetWindowTextA(hwnd, out lpString, nMaxCount);
+            if (successValue > 0)
+            {
+                Debug.WriteLine($"GetWindowTextA for Title returned: {successValue}");
+                return true;
+            }
+            Debug.WriteLine($"GetWindowTextA for Title returned: {successValue}");
+            return false;
+        }
+
         public static IntPtr GetParentWrapper(IntPtr hwnd)
         {
-            // TODO: Add optimizaion of caching values from calles; make the values in the list have a time to live
             return GetParent(hwnd);
         }
 
@@ -130,7 +141,7 @@ namespace viewTools
             return FindWindowExA(hWndParent, hWndChildAfter, lpszClass, lpszWindow);
         }
 
-        public static WINDOW_POSITION GetWindowPosition(IntPtr hwnd)
+        public static ViewPosition GetWindowPosition(IntPtr hwnd)
         {
             bool success = GetWindowRect(hwnd, out RECT position);
             if (!success)
@@ -138,14 +149,12 @@ namespace viewTools
                 Debug.WriteLine(Marshal.GetLastWin32Error());
             }
 
-            var posi = new WINDOW_POSITION();
-            posi.Top = position.Top;
-            posi.Left = position.Left;
+            var posi = new ViewPosition(position.Left, position.Top);
 
             return posi;
         }
 
-        public static WINDOW_SIZE GetWindowSize(IntPtr hwnd)
+        public static ViewSize GetWindowSize(IntPtr hwnd)
         {
             var position = new RECT();
             bool success = GetWindowRect(hwnd, out position);
@@ -154,9 +163,7 @@ namespace viewTools
                 Debug.WriteLine(Marshal.GetLastWin32Error());
             }
 
-            var size = new WINDOW_SIZE();
-            size.Width = position.Bottom - position.Top;
-            size.Height = position.Right - position.Left;
+            var size = new ViewSize(position.Right - position.Left, position.Bottom - position.Top);
 
             return size;
         }
@@ -216,7 +223,7 @@ namespace viewTools
             return GetAnyWindowByClass("Chrome_WidgetWin_1");
         }
 
-        public static void GetAllChromeWigetHandles()
+        public static List<IntPtr> GetAllChromeWigetHandles()
         {
             var wgts = new List<IntPtr>
             {
@@ -236,10 +243,7 @@ namespace viewTools
                 sibling = WindowsAPITools.FindWindowExAWrapper(IntPtr.Zero, sibling, "Chrome_WidgetWin_1", null);
             }
 
-            foreach (var item in wgts)
-            {
-                new WindowMetadata(item);
-            }
+            return wgts;
         }
 
 
