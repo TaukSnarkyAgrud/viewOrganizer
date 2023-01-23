@@ -25,9 +25,10 @@ namespace viewTools
     //    If all, top left right bottom are 0
     public class Tools
     {
+        View aView;
         public void CreateView()
         {
-            _ = new View();
+            aView = new View();
 
             foreach (var dis in DisplayView.displaysInView)
             {

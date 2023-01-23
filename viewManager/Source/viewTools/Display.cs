@@ -14,13 +14,13 @@ namespace viewTools
     {
         public static List<Display> displaysAvailable;
 
-        public Rectangle professedResolution;
-        public Rectangle actualResolution;
+        public ViewRectangle professedResolution;
+        public ViewRectangle actualResolution;
         public string professedAspectRatio;
         public double professedAspectRatioScalar;
         public string actualAspectRatio;
         public double actualAspectRatioScalar;
-        public Rectangle position;
+        public ViewPosition position;
         public ViewRectangle externalMargin;
 
         public string displayName;
@@ -34,6 +34,13 @@ namespace viewTools
             calculateMaxBounds();
             workingArea();
         }
+
+        public Display(ViewPosition position, ViewRectangle actualResolution)
+        {
+            this.position = position;
+            this.actualResolution = actualResolution;
+        }
+
         public override string ToString()
         {
             return $"Display Object: DisplayName: {displayName}{sObject.DeviceName}\n" +
@@ -49,26 +56,26 @@ namespace viewTools
 
         private void workingArea()
         {
-            professedResolution = new Rectangle(sObject.WorkingArea.X, sObject.WorkingArea.Y, sObject.WorkingArea.Width, sObject.WorkingArea.Height);
-            professedAspectRatioScalar = professedResolution.Width / professedResolution.Height;
+            professedResolution = new ViewRectangle(sObject.WorkingArea.X, sObject.WorkingArea.Y, new Size(sObject.WorkingArea.Width, sObject.WorkingArea.Height));
+            professedAspectRatioScalar = (double)professedResolution.width / (double)professedResolution.height;
             professedAspectRatio = ResolveRatioThruQuantize(professedAspectRatioScalar);
 
-            if (externalMargin == null)
+            if (externalMargin == null || externalMargin.rectangle.IsEmpty)
             {
                 actualResolution = professedResolution;
                 actualAspectRatio = professedAspectRatio;
             }
             else
             {
-                actualResolution = RectangleUnion(professedResolution, externalMargin.rectangle);
-                actualAspectRatioScalar = actualResolution.Width / actualResolution.Height;
+                actualResolution = RectangleUnion(professedResolution, externalMargin);
+                actualAspectRatioScalar = (double)actualResolution.width / (double)actualResolution.height;
                 actualAspectRatio = ResolveRatioThruQuantize(actualAspectRatioScalar);
             }
         }
 
-        private Rectangle RectangleUnion(Rectangle aRes, Rectangle aMargin)
+        private ViewRectangle RectangleUnion(ViewRectangle aRes, ViewRectangle aMargin)
         {
-            return new Rectangle(aRes.X + aMargin.X, aRes.Y + aMargin.Y, aRes.Width + aMargin.Width, aRes.Height + aMargin.Height);
+            return new ViewRectangle(aRes.left + aMargin.left, aRes.top + aMargin.top, aRes.width + aMargin.width, aRes.height + aMargin.height);
         }
 
         private string ResolveRatioThruQuantize(double someRatio)
@@ -76,31 +83,70 @@ namespace viewTools
             if (Math.Floor(someRatio) >= 4) return DataStructs.AspectRatio[4];
             int n = DataStructs.AspectRatio.Values.Count;
             var keys = DataStructs.AspectRatio.Keys.ToArray();
-            double previousKey = keys[n - 2];
+            double previousKey = keys[n-2];
             for (int i = 1; i < n; ++i)
             {
-                double key = keys[i];
                 int previousIndex = i - 1;
-                previousKey = keys[previousIndex];
                 int nextIndex = i + 1;
+                double key = keys[i];
+                previousKey = keys[previousIndex];
+                double nextKey = keys[nextIndex];
 
                 if (nextIndex == n - 1)
                 {
-                    if (key > previousKey)
+                    if (someRatio > previousKey)
                     {
                         return DataStructs.AspectRatio[i];
                     }
                     return DataStructs.AspectRatio[previousKey];
                 }
 
-                if (key > previousKey && key < keys[nextIndex])
+                if (someRatio == previousKey)
                 {
-                    var sP = key - previousKey;
-                    var sN = keys[nextIndex] - key;
+                    return DataStructs.AspectRatio[previousKey];
+                }
 
-                    if (sP > sN)
+                if (someRatio == key)
+                {
+                    return DataStructs.AspectRatio[key];
+                }
+
+                if (someRatio == nextKey)
+                {
+                    return DataStructs.AspectRatio[nextKey];
+                }
+
+                if (someRatio < previousKey)
+                {
+                    return DataStructs.AspectRatio[previousKey];
+                }
+
+                if (someRatio < key)
+                {
+                    var sP = someRatio - previousKey;
+                    var sC = key - someRatio;
+
+                    if (sC > sP)
                     {
-                        return DataStructs.AspectRatio[keys[nextIndex]];
+                        return DataStructs.AspectRatio[previousKey];
+                    } else
+                    {
+                        return DataStructs.AspectRatio[key];
+                    }
+                }
+
+                if (someRatio < nextKey)
+                {
+                    var sN = nextKey - someRatio;
+                    var sC = someRatio - key;
+
+                    if (sC > sN)
+                    {
+                        return DataStructs.AspectRatio[nextKey];
+                    }
+                    else
+                    {
+                        return DataStructs.AspectRatio[key];
                     }
                 }
             }
@@ -110,14 +156,14 @@ namespace viewTools
         private void calculateMaxBounds()
         {
             // check enum
-            try
-            {
-                externalMargin = DataStructs.DisplayModelExternalMargins[sObject.DeviceName];
-                return;
-            }catch(NullReferenceException)
-            {
+            //try
+            //{
+            //    externalMargin = DataStructs.DisplayModelExternalMargins[sObject.DeviceName];
+            //    return;
+            //}catch(NullReferenceException)
+            //{
                 
-            }
+            //}
             externalMargin = new ViewRectangle(0, 0, 0, 0);
         }
 

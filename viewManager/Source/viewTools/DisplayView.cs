@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
@@ -10,7 +11,7 @@ namespace viewTools
     {
         public static List<Display> displaysInView;
 
-        public Rectangle maxBounds;
+        public ViewRectangle maxBounds;
 
         public DisplayView()
         {
@@ -26,35 +27,36 @@ namespace viewTools
                 var createDisplay = new Display(display);
                 DisplayView.displaysInView.Add(createDisplay);
             }
-            CalculateMaxBounds();
         }
 
-        private void CalculateMaxBounds()
+        public static Point workingAreaPositiveCorrection()
         {
-            var leftMost = displaysInView.Min(m => m.actualResolution.X);
-            var topMost = displaysInView.Min(m => m.actualResolution.Y);
+            var leftMost = displaysInView.Min(d => d.position == null ? 0 : d.position.left);
+            var topMost = displaysInView.Min(d => d.position == null ? 0 : d.position.top);
+            if (leftMost >= 0 && topMost >= 0)
+            {
+                return new Point(0, 0);
+            }
+            return new Point(Math.Abs(leftMost), Math.Abs(topMost));
+        }
+        private void CalculateMaxDisplayViewBounds()
+        {
+            var leftMost = displaysInView.Min(m => m.actualResolution.left);
+            var topMost = displaysInView.Min(m => m.actualResolution.top);
             var rightMost = displaysInView.Max(m => calculateRightDisplayBound(m));
             var bottomMost = displaysInView.Max(m => calculateBottomDisplayBound(m));
-            maxBounds = new Rectangle(leftMost, bottomMost, rightMost, topMost);
+            maxBounds = new ViewRectangle(leftMost, topMost, rightMost, bottomMost);
             Debug.WriteLine($"Max Bounds: {maxBounds}");
         }
 
         private int calculateBottomDisplayBound(Display m)
         {
-            if (m.externalMargin.IsEmpty)
-            {
-                return m.actualResolution.Y + m.actualResolution.Height;
-            }
-            return m.actualResolution.Y + m.externalMargin.Y + m.actualResolution.Height + m.externalMargin.Height;
+            return m.actualResolution.height + m.actualResolution.position.top;
         }
 
         private int calculateRightDisplayBound(Display m)
         {
-            if (m.externalMargin.IsEmpty)
-            {
-                return m.actualResolution.X + m.actualResolution.Width;
-            }
-            return m.actualResolution.X + m.externalMargin.X + m.actualResolution.Width + m.externalMargin.Width;
+            return m.actualResolution.width + m.actualResolution.position.left;
         }
     }
 }

@@ -16,25 +16,29 @@ namespace viewTools
             dView = new DisplayView();
             dViews.Add(dView);
             wView = new WindowView(dView);
+            filterOutNonUserWindowObjects();
         }
-        public void filterOutNonUserWindowObjects(WindowMetadata aProspectiveWindowObject)
+        public void filterOutNonUserWindowObjects()
         {
-            
             // Candidates that are NOT viable are:
             //      Size is zero(0 for either or both height and width)
             //      Outside max bounds of a display.
             //      ViewState is set to hidden
-            if (aProspectiveWindowObject.size == 0
-                || aProspectiveWindowObject.ViewState == ShowWindowCommands.Hide.ToString()
-                ||  
+            foreach (var window in wView.AllWindowObjectsEnumerated)
             {
-                aProspectiveWindowObject.isViableWindow = false;
-                return;
-            }
+                // Disqualifying attributes
+                if (window.size == 0
+                || window.ViewState == ShowWindowCommands.Hide.ToString()
+                || (window.OutSideDisplayView() && window.ViewState != ShowWindowCommands.Minimized.ToString()))
+                {
+                    window.isViableWindow = false;
+                }
 
-            if (aProspectiveWindowObject.HasTitle())
-            {
-                aProspectiveWindowObject.isViableWindow = true;
+                // Qualifying attributes
+                if (window.HasTitle())
+                {
+                    window.isViableWindow = true;
+                }
             }
         }
     }

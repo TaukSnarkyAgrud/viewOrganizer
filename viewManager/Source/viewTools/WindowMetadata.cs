@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Reflection.Metadata.Ecma335;
 using System.Threading;
 using static viewTools.DataStructs;
 
@@ -150,14 +151,58 @@ namespace viewTools
             }
 
             // Call external method asking api to get windows title; set title field
-            WindowsAPITools.GetWindowTextAWrapper(handle, out title, 100);
+            WindowsAPITools.GetWindowTextWrapper(handle, out string titleString, 100);
+            title = titleString;
 
             // Check if the title was set
-            if (title.Count() > 0)
+            if (title != null && title.Count() > 0)
             {
                 return true;
             }
             return false;
+        }
+
+        internal bool OutSideDisplayView()
+        {
+            var intersects = false;
+            var correction = DisplayView.workingAreaPositiveCorrection();
+            List<Display> displays = DisplayView.displaysInView;
+            var theWindowRectange = this.rectangle.rectangle;
+            if (!DisplayView.workingAreaPositiveCorrection().IsEmpty)
+            {
+                displays = new List<Display>();
+                foreach ( var dvD in DisplayView.displaysInView )
+                {
+                    var positionCorrected = CorrectPosition(dvD.position, correction);
+                    displays.Add(new Display(positionCorrected, dvD.actualResolution));
+                }
+                var thisRect = this.rectangle.rectangle;
+                theWindowRectange = new Rectangle(thisRect.X + correction.X, thisRect.Y + correction.Y, thisRect.Width, thisRect.Height);
+            }
+            foreach (var display in displays)
+            {
+                if (display.sObject.WorkingArea.IntersectsWith(theWindowRectange))
+                {
+                    intersects= true;
+                }
+            }
+            if (!intersects)
+            {
+                Debug.WriteLine($"{this.handle}Doesn't intersect any displays");
+            }
+            return !intersects;
+        }
+
+        private ViewPosition CorrectPosition(ViewPosition position, Point correction)
+        {
+            return new ViewPosition(position.left + correction.X, position.top + correction.Y);
+        }
+
+        private bool RectangleIntersection(ViewRectangle maxBounds, ViewRectangle rectangle)
+        {
+            var translateBoundRectToPositive = maxBounds.TranslateRectangleToPositive();
+            var translateWindowRectToPositive = rectangle.TranslateRectangleToPositive();
+            return translateBoundRectToPositive.IntersectsWith(translateWindowRectToPositive);
         }
     }
 }

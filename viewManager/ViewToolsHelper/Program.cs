@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using viewTools;
 
 namespace ViewToolsHelper
 {
@@ -7,7 +6,7 @@ namespace ViewToolsHelper
     {
         static void Main(string[] args)
         {
-            var aObj = new Tools();
+            var aObj = new viewTools.Tools();
             var breaker = "----------------------------------------------------------------------------------------------------------------------------------------";
             Debug.WriteLine($"{breaker}START");
             aObj.CreateView();

@@ -1,0 +1,5 @@
+1936
+-8,-37
+1096
+max height 1100 -14
+chrome adds a buffer nothing can be dones

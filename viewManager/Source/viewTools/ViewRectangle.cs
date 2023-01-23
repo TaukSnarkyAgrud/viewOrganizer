@@ -37,8 +37,12 @@ namespace viewTools
             }
         }
 
+        public int left => rectangle.Left;
+        public int top => rectangle.Top;
         public int right => rectangle.Right;
         public int bottom => rectangle.Bottom;
+        public int width => rectangle.Width;
+        public int height => rectangle.Height;
 
         public ViewRectangle()
         {
@@ -101,6 +105,16 @@ namespace viewTools
             }
 
             return anyNegative;
+        }
+
+        internal Rectangle TranslateRectangleToPositive()
+        {
+            if(this.left >= 0 && this.top >= 0 ) { return this.rectangle; }
+            var newLeft = left < 0 ? 0 : left;
+            var newTop = top < 0 ? 0 : top;
+            var newRight = right + (left < 0 ? Math.Abs(left) : 0);
+            var newBottom = bottom + (top < 0 ? Math.Abs(top) : 0);
+            return Rectangle.FromLTRB(newLeft, newTop, newRight, newBottom);
         }
     }
 }

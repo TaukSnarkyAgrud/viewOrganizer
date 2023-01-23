@@ -10,7 +10,7 @@ namespace viewTools
         public static Dictionary<double, string> AspectRatio = new Dictionary<double, string>()
             {
                 { 0, "Unknown" },
-                { 0.461938, "16:3" },
+                { 0.1875, "3:16" },
                 { 0.5625, "9:16" },
                 { 0.6, "3:5" },
                 { 0.6666, "2:3" },
@@ -59,7 +59,8 @@ namespace viewTools
 
         public static Dictionary<string, ViewRectangle> DisplayModelExternalMargins = new Dictionary<string, ViewRectangle>()
         {
-            { "M422i-B1", new ViewRectangle(-8,-40, 1920+8+8, 1080+40+40) }
+            { "M422i-B1", new ViewRectangle(8, 40, 8, 40)},
+            { "SE198WFP", new ViewRectangle(0, 0, 0, 0)}
         };
     }
 }

@@ -3,13 +3,15 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using static viewTools.DataStructs;
+using static viewTools.WindowsAPITools;
 
 namespace viewTools
 {
     class WindowsAPITools
     {
-        public delegate bool EnumWindowProc(IntPtr hwnd, IntPtr lParam);
+        public delegate bool EnumWindowsProc(IntPtr hwnd, int lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -41,7 +43,7 @@ namespace viewTools
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool EnumChildWindows(IntPtr window, EnumWindowProc callback, IntPtr lParam);
+        public static extern bool EnumChildWindows(IntPtr window, EnumWindowsProc callback, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern long SetWindowLongA(IntPtr window, int nIndex, long dwNewLong);
@@ -56,9 +58,14 @@ namespace viewTools
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr GetParent(IntPtr hwnd);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.SysInt)]
-        public static extern int GetWindowTextA(IntPtr hwnd, out string lpString, int nMaxCount);
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern int GetWindowTextW(IntPtr hwnd, StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowTextLength", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern int GetWindowTextLength(IntPtr hwnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern bool EnumWindows(EnumWindowsProc callback, int extraData);
 
         public struct RECT
 
@@ -118,15 +125,24 @@ namespace viewTools
             DWLP_DLGPROC = 0x4
         }
 
-        public static bool GetWindowTextAWrapper(IntPtr hwnd, out string lpString, int nMaxCount)
+        public static bool GetWindowTextWrapper(IntPtr hwnd, out string lpString, int nMaxCount)
         {
-            var successValue = GetWindowTextA(hwnd, out lpString, nMaxCount);
+            var length = GetWindowTextLength(hwnd);
+            if (length < 1)
+            {
+                lpString = "";
+                return false;
+            }
+            StringBuilder lpStringReturn = new(length + 1);
+            var successValue = GetWindowTextW(hwnd, lpStringReturn, lpStringReturn.Capacity);
+
+            Debug.WriteLine($"GetWindowTextA for Title returned: {successValue}");
             if (successValue > 0)
             {
-                Debug.WriteLine($"GetWindowTextA for Title returned: {successValue}");
+                lpString = lpStringReturn == null ? "" : lpStringReturn.ToString();
                 return true;
             }
-            Debug.WriteLine($"GetWindowTextA for Title returned: {successValue}");
+            lpString = lpStringReturn == null ? "" : lpStringReturn.ToString();
             return false;
         }
 
@@ -254,25 +270,25 @@ namespace viewTools
         // Unverified Methods
 
         // https://stackoverflow.com/questions/1363167/how-can-i-get-the-child-windows-of-a-window-given-its-hwnd
-        public static List<IntPtr> GetAllChildHandles(IntPtr hwnd)
-        {
-            List<IntPtr> childHandles = new List<IntPtr>();
+        //public static List<IntPtr> GetAllChildHandles(IntPtr hwnd)
+        //{
+        //    List<IntPtr> childHandles = new List<IntPtr>();
 
-            GCHandle gcChildhandlesList = GCHandle.Alloc(childHandles);
-            IntPtr pointerChildHandlesList = GCHandle.ToIntPtr(gcChildhandlesList);
+        //    GCHandle gcChildhandlesList = GCHandle.Alloc(childHandles);
+        //    IntPtr pointerChildHandlesList = GCHandle.ToIntPtr(gcChildhandlesList);
 
-            try
-            {
-                EnumWindowProc childProc = new EnumWindowProc(EnumWindow);
-                EnumChildWindows(hwnd, childProc, pointerChildHandlesList);
-            }
-            finally
-            {
-                gcChildhandlesList.Free();
-            }
+        //    try
+        //    {
+        //        EnumWindowProc childProc = new EnumWindowProc(EnumWindow);
+        //        EnumChildWindows(hwnd, childProc, pointerChildHandlesList);
+        //    }
+        //    finally
+        //    {
+        //        gcChildhandlesList.Free();
+        //    }
 
-            return childHandles;
-        }
+        //    return childHandles;
+        //}
 
         private static bool EnumWindow(IntPtr hWnd, IntPtr lParam)
         {

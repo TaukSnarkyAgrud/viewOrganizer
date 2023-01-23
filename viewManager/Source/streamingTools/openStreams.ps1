@@ -13,6 +13,7 @@ $preferredStreamerTags = [ordered]@{
     fudgexl=@{twitch="fudgexl"};
     jenn=@{twitch="jenntacles"};
     aims=@{twitch="aims"};
+    tim=@{twitch="Darkness429"};
     pestily=@{twitch="pestily"};
     tweety=@{twitch="tweetyexpert"};
     hodsy=@{twitch="hodsy"};
@@ -21,6 +22,9 @@ $preferredStreamerTags = [ordered]@{
     mr___meme=@{twitch="mr___meme"};
     cali=@{twitch="caliverse"};
     clintus=@{twitch="clintus"};
+    Bull1060=@{facebook="Bull1060"};
+    ElliottAsAlways=@{facebook="ElliottAsAlways"};
+    MugsTV=@{facebook="MugsTV"};
 }
 $onlinePreferredStreamers = [ordered]@{};
 
@@ -132,13 +136,15 @@ function IsStreamerOnline{
             }
             "facebook"{
                 Write-Host -NoNewline "facebook site for ${streamerName} "
-            if ((Invoke-RestMethod -Uri "https://www.facebook.com/${tagObject[tagSite]}/live") -like "*online*"){
-                Write-Output "Online"
-                $streamerOnline = $true
-                $streamerOnlineObject.Add($tagSite, $tag)
-            } else {
-                Write-Output "Offline"
-            }
+                $tag = $tagObject[$tagSite]
+                $OnlineCheck = Invoke-RestMethod -Uri "www.facebook.com/${tag}/live"
+                if ($OnlineCheck -like "*LiveVideoOverlaySticker*"){
+                    Write-Output "Online"
+                    $streamerOnline = $true
+                    $streamerOnlineObject.Add($tagSite, $tag)
+                } else {
+                    Write-Output "Offline"
+                }
             }
             "youtube" {
                 Write-Host -NoNewline "youtube site for ${streamerName} "
@@ -237,7 +243,7 @@ function createCliChromeString {
     $Top = $displayViewAddress.Top
 
     $aRandom = Get-Random -Maximum 1000000
-    $streamUrl = "--app=${streamUri} --window-position=`"${Left},${Top}`" --window-size=`"${streamW},${streamH}`" --user-data-dir=`"${env:tmp}\chrome_tmp_user_dir\${aRandom}`""
+    $streamUrl = "--app=${streamUri} --window-position=`"${Left},${Top}`" --window-size=`"${streamW},${streamH}`""
     #Write-Output $streamUrl
     return $streamUrl
 }
@@ -251,3 +257,4 @@ function spawnStream{
         Start-Sleep -s 1
         & 'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe' $cliString
 }
+userSelectStreamers

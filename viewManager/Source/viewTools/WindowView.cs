@@ -17,6 +17,7 @@ namespace viewTools
 
         public Dictionary<IntPtr, WindowMetadata> rootWindows;
         private List<IntPtr> windowPointersEnumerated;
+        private static List<IntPtr> windowPointersFromApiEnumerated;
 
         public List<IntPtr> WindowPointersEnumerated {
             get
@@ -45,6 +46,17 @@ namespace viewTools
                 windowPointersEnumerated= items;
             }
         }
+        public List<WindowMetadata> AllWindowObjectsEnumerated
+        {
+            get
+            {
+                if (rootWindows == null)
+                {
+                    return new List<WindowMetadata>();
+                }
+                return EnumnerateWindows(rootWindows);
+            }
+        }
 
         public WindowView(DisplayView view)
         {
@@ -68,15 +80,51 @@ namespace viewTools
             }
         }
 
+        public List<WindowMetadata> EnumnerateWindows(Dictionary<IntPtr, WindowMetadata> someWindows)
+        {
+            return GetEnumeratedWindows(someWindows).Values.ToList<WindowMetadata>();
+        }
+
+        private Dictionary<IntPtr, WindowMetadata> GetEnumeratedWindows(Dictionary<IntPtr, WindowMetadata> someWindows)
+        {
+            var windowsAsDict = new Dictionary<IntPtr, WindowMetadata>();
+            foreach (var item in someWindows.Keys)
+            {
+                if (!windowsAsDict.ContainsKey(item))
+                {
+                    windowsAsDict.Add(item, someWindows[item]);
+                }
+
+                var children = someWindows[item].children;
+                if (children != null && children.Count > 0)
+                {
+                    foreach (var child in GetEnumeratedWindows(children).Values)
+                    {
+                        if (!windowsAsDict.ContainsKey(child.handle))
+                        {
+                            windowsAsDict.Add(child.handle, child);
+                        }
+                    }
+                }
+                
+            }
+            return windowsAsDict;
+        }
+
         private List<IntPtr> GetAllChildren(WindowMetadata aWindow)
         {
             List<IntPtr> items = new List<IntPtr>();
-            items.AddRange(aWindow.children.Select(v => v.Key).ToList());
-            foreach (var child in aWindow.children.Select(v => v.Value).ToList())
+            var aWindowChildren = aWindow.children?.Select(v => v.Key).ToList();
+            if(aWindowChildren != null)
             {
-                items.AddRange(GetAllChildren(aWindow));
+                // Add any children, if any
+                items.AddRange(aWindowChildren);
+                foreach (var child in aWindowChildren)
+                {
+                    // Add childs' children, if any
+                    items.AddRange(GetAllChildren(aWindow));
+                }
             }
-
             return items;
         }
 
@@ -207,24 +255,47 @@ namespace viewTools
             WindowsAPITools.RemoveTitlebar(hwnd);
         }
 
-        public List<IntPtr> GetAllChildHandles(IntPtr hwnd)
-        {
-            return WindowsAPITools.GetAllChildHandles(hwnd);
-        }
+        //public List<IntPtr> GetAllChildHandles(IntPtr hwnd)
+        //{
+        //    return WindowsAPITools.GetAllChildHandles(hwnd);
+        //}
 
-        public List<IntPtr> GetAllChildChromeWigets(IntPtr parent)
-        {
-            var anyWgtHdl = WindowsAPITools.GetAnyChromeWigetHandle();
-            Debug.WriteLine(anyWgtHdl);
-            var nxtHdl = WindowsAPITools.FindWindowExA(IntPtr.Zero, anyWgtHdl, "Chrome_WidgetWin_1", null);
-            Debug.WriteLine(nxtHdl);
-            return GetAllChildHandles(anyWgtHdl);
-        }
+        //public List<IntPtr> GetAllChildChromeWigets(IntPtr parent)
+        //{
+        //    var anyWgtHdl = WindowsAPITools.GetAnyChromeWigetHandle();
+        //    Debug.WriteLine(anyWgtHdl);
+        //    var nxtHdl = WindowsAPITools.FindWindowExA(IntPtr.Zero, anyWgtHdl, "Chrome_WidgetWin_1", null);
+        //    Debug.WriteLine(nxtHdl);
+        //    return GetAllChildHandles(anyWgtHdl);
+        //}
 
         public void IngestAllWindowObjects()
         {
             IngestChromeWindows();
             IngestWindowsByProcess();
+            IngestWindowsByAPI();
+        }
+
+        private void IngestWindowsByAPI()
+        {
+            windowPointersFromApiEnumerated = new List<IntPtr>();
+            WindowsAPITools.EnumWindows(EnumWindowsCallback, 0);
+            foreach (var item in windowPointersFromApiEnumerated)
+            {
+                var alreadyAware = AllWindowObjectsEnumerated.FirstOrDefault(x => x.handle == item);
+                if (alreadyAware != null)
+                {
+                    continue;
+                }
+                var newWM = new WindowMetadata(item);
+                GetAddWindow(newWM);
+            }
+        }
+
+        public static bool EnumWindowsCallback(IntPtr hwnd, int lParam)
+        {
+            WindowView.windowPointersFromApiEnumerated.Add(hwnd);
+            return true;
         }
 
         private void IngestWindowsByProcess()
@@ -234,6 +305,12 @@ namespace viewTools
             var windowProcesses = GetAllProcessesWithWindows();
             foreach (var item in windowProcesses)
             {
+                var alreadyAware = AllWindowObjectsEnumerated.FirstOrDefault(x => x.handle == item.MainWindowHandle);
+                if(alreadyAware != null)
+                {
+                    alreadyAware.mainProcess = item;
+                    continue;
+                }
                 var newWM = new WindowMetadata(item.MainWindowHandle, item);
                 GetAddWindow(newWM);
             }
