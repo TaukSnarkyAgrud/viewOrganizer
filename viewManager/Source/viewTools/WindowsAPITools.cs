@@ -67,6 +67,19 @@ namespace viewTools
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         public static extern bool EnumWindows(EnumWindowsProc callback, int extraData);
 
+        [DllImport("user32.dll", ExactSpelling = true)]
+        static extern IntPtr GetAncestor(IntPtr hwnd, GetAncestorFlags flags);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr GetLastActivePopup(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool GetTitleBarInfo(IntPtr hwnd, out TITLEBARINFO pti);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
         public struct RECT
 
         {
@@ -111,18 +124,72 @@ namespace viewTools
 
         }
 
-        enum WindowLongFlags : int
+        [StructLayout(LayoutKind.Sequential)]
+        struct TITLEBARINFO
         {
-            GWL_EXSTYLE = -20,
-            GWLP_HINSTANCE = -6,
-            GWLP_HWNDPARENT = -8,
-            GWL_ID = -12,
-            GWL_STYLE = -16,
-            GWL_USERDATA = -21,
-            GWL_WNDPROC = -4,
-            DWLP_USER = 0x8,
-            DWLP_MSGRESULT = 0x0,
-            DWLP_DLGPROC = 0x4
+            public const int CCHILDREN_TITLEBAR = 5;
+            public uint cbSize;
+            public RECT rcTitleBar;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = CCHILDREN_TITLEBAR + 1)]
+            public uint[] rgstate;
+        }
+
+        enum GetAncestorFlags
+        {
+            /// <summary>
+            /// Retrieves the parent window. This does not include the owner, as it does with the GetParent function.
+            /// </summary>
+            GetParent = 1,
+            /// <summary>
+            /// Retrieves the root window by walking the chain of parent windows.
+            /// </summary>
+            GetRoot = 2,
+            /// <summary>
+            /// Retrieves the owned root window by walking the chain of parent and owner windows returned by GetParent.
+            /// </summary>
+            GetRootOwner = 3
+        }
+        
+        enum TBStates
+        {
+            STATE_SYSTEM_UNAVAILABLE = 0x1,
+            STATE_SYSTEM_PRESSED = 0x8,
+            STATE_SYSTEM_INVISIBLE = 0x8000,
+            STATE_SYSTEM_OFFSCREEN = 0x10000,
+            STATE_SYSTEM_FOCUSABLE = 0x100000
+        }
+
+        public static bool IsAltTabWindow(IntPtr hwnd)
+        {
+            TITLEBARINFO ti;
+            IntPtr hwndTry, hwndWalk = new IntPtr(1);
+
+            if (!IsWindowVisible(hwnd))
+                return false;
+
+            hwndTry = GetAncestor(hwnd, GetAncestorFlags.GetRootOwner);
+            while (hwndTry != hwndWalk)
+            {
+                hwndWalk = hwndTry;
+                hwndTry = GetLastActivePopup(hwndWalk);
+                if (IsWindowVisible(hwndTry))
+                    break;
+            }
+            if (hwndWalk != hwnd)
+                return false;
+
+            // the following removes some task tray programs and "Program Manager"
+            ti.cbSize = (uint)Marshal.SizeOf(typeof(TITLEBARINFO));
+            GetTitleBarInfo(hwnd, out ti);
+            if ((ti.rgstate[0] & 0x8000) == 0x8000)
+                return false;
+
+            // Tool windows should not be displayed either, these do not appear in the
+            // task bar.
+            if (((int)GetWindowLongPtr(hwnd, -20) & 0x00000080) == 0x00000080)
+                return false;
+
+            return true;
         }
 
         public static bool GetWindowTextWrapper(IntPtr hwnd, out string lpString, int nMaxCount)
@@ -305,9 +372,9 @@ namespace viewTools
             return true;
         }
 
-        public static void RemoveTitlebar(IntPtr hwnd)
-        {
-            SetWindowLongA(hwnd, (int)WindowLongFlags.GWL_STYLE, 0x00C00000L);
-        }
+        //public static void RemoveTitlebar(IntPtr hwnd)
+        //{
+        //    SetWindowLongA(hwnd, (int)WindowLongFlags.GWL_STYLE, 0x00C00000L);
+        //}
     }
 }

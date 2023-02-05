@@ -5,16 +5,16 @@ $upperLeftOrigin = @{
     Top=0
 }
 $preferredStreamerTags = [ordered]@{
-    poolshark=@{twitch="thepoolshark"; facebook="PoolsharkGaming"};
+    poolshark=@{twitch="thepoolshark"; facebook="PoolsharkGaming"; youtube="thepoolshark"};
     lupo=@{youtube="DrLupo"};
     trip=@{twitch="triple_g"};
-    fab=@{twitch="notfabtv"};
+    pestily=@{twitch="pestily"};
+    fab=@{twitch="notfabtv"; youtube="NotFabTV"};
     paul=@{twitch="actionjaxon"};
-    fudgexl=@{twitch="fudgexl"};
     jenn=@{twitch="jenntacles"};
     aims=@{twitch="aims"};
-    tim=@{twitch="Darkness429"};
-    pestily=@{twitch="pestily"};
+    fudgexl=@{twitch="fudgexl"};
+    tim=@{facebook="Darkness429"};
     tweety=@{twitch="tweetyexpert"};
     hodsy=@{twitch="hodsy"};
     bearkiLauren=@{twitch="bearki"};
@@ -25,8 +25,11 @@ $preferredStreamerTags = [ordered]@{
     Bull1060=@{facebook="Bull1060"};
     ElliottAsAlways=@{facebook="ElliottAsAlways"};
     MugsTV=@{facebook="MugsTV"};
+    callOfCrafter=@{facebook="Callofcrafters0"};
+    theJosh=@{youtube="theJOSHfeed"};
 }
 $onlinePreferredStreamers = [ordered]@{};
+$youtubeHashs = @{};
 
 function createTwitchStreamUrl {
     param (
@@ -37,9 +40,12 @@ function createTwitchStreamUrl {
 }
 function createYoutubeStreamUrl {
     param (
-        $streamerTag
+        $tag
     )
-    $streamUrl = "https://www.youtube.com/${streamerTag}/live"
+    $streamHash = getYoutubeStreamHash $tag
+    # TODO: time start in url
+    $streamUrl = "https://www.youtube.com/embed/${streamHash}?popout=1&autoplay=1&loop=0&controls=1&modestbranding=0"
+    #$streamUrl = "https://www.youtube.com/${streamerTag}/live"
     return $streamUrl
 }
 function createFacebookStreamUrl {
@@ -59,24 +65,30 @@ function createTwitchChatUrl {
 }
 function createYoutubeChatUrl {
     param (
-        $tagObject
+        $tag
     )
-    $streamHash = getYoutubeStreamHash $tagObject
+
+    $streamHash = getYoutubeStreamHash $tag
     $streamUrl = "https://www.youtube.com/live_chat?is_popout=1&v=${streamHash}"
     return $streamUrl
 }
 
 function getYoutubeStreamHash {
     param (
-        $tagObject
+        $tag
     )
-    $TagYt = $tagObject["youtube"]
 
-    $streamUri = "https://www.youtube.com/${TagYt}/live"
-    $streamHtml = Invoke-RestMethod -Uri $streamUri
-    $match = Select-String "https:\/\/youtu\.be\/([A-Za-z0-9]+)`"" -inputobject $streamHtml
-    $vId = $match.Matches.groups[1].value
-    return $vId
+    if($youtubeHashs.containsKey($tag)){
+        return $youtubeHashs[$tag]
+    } else {
+        $streamUri = "https://www.youtube.com/${tag}/live"
+        $streamHtml = Invoke-RestMethod -Uri $streamUri
+        $streamHtml | Out-File -File C:\Users\andrewta\Development\viewOrganizer\viewManager\Source\streamingTools\tmp.html
+        $match = Select-String "https:\/\/youtu\.be\/([A-Za-z0-9-]+)`"" -inputobject $streamHtml
+        $vId = $match.Matches.groups[1].value
+        $youtubeHashs[$tag] = $vId
+        return $vId
+    }
 }
 
 function getStreamUrl{
@@ -110,6 +122,17 @@ function getChatUrl{
             return createYoutubeChatUrl $tag
         }
     }
+}
+
+function htmlHasTag {
+    param(
+        $tag,
+        $html
+    )
+    if($html -like "*$tag*"){
+        return $true
+    }
+    return $false
 }
 
 function IsStreamerOnline{
@@ -148,7 +171,12 @@ function IsStreamerOnline{
             }
             "youtube" {
                 Write-Host -NoNewline "youtube site for ${streamerName} "
-                if ((Invoke-RestMethod -Uri "https://www.youtube.com/${tagObject[tagSite]}/") -like "*hqdefault_live.jpg*"){
+                $htmlReturn = (Invoke-RestMethod -Uri "https://www.youtube.com/${tagObject[tagSite]}/live")
+                #$htmlReturn | Out-File -File "C:\Users\andrewta\Development\viewOrganizer\viewManager\Source\streamingTools\tmp.html"
+                $tag = $tagObject[$tagSite]
+                
+                #if ((htmlHasTag $tag $htmlReturn) -and ($htmlReturn -like "*hqdefault_live.jpg*" -or $htmlReturn -like "*hq720_live.jpg*")){    
+                if ($htmlReturn -like "*hqdefault_live.jpg*" -or $htmlReturn -like "*hq720_live.jpg*"){
                     Write-Output "Online"
                     $streamerOnline = $true
                     $streamerOnlineObject.Add($tagSite, $tag)
@@ -180,8 +208,6 @@ function userSelectStreamers{
     getScreenDimensions
     $screenW=1904
     $screenH=1000
-    $chatW=360
-    $chatH=900
     $screenWDivided3=[math]::ceiling($screenW/3)
     $screenHDivided2=[math]::ceiling($screenH/2)
     $selection = $tagSiteKeys.Keys | Out-GridView -OutputMode Multiple
@@ -189,19 +215,14 @@ function userSelectStreamers{
     foreach($d in $selection){
         $valueObject = $tagSiteKeys[$d]
         $streamUrl = getStreamUrl $valueObject["site"] $valueObject["tag"]
-        $chatUrl = ""
         if ($valueObject["site"] -ne "facebook"){
-            $chatUrl = getChatUrl $valueObject["site"] $valueObject["tag"]
-            Write-Output @{$valueObject["site"]=$valueObject["tag"]; streamUrl=$streamUrl; chatUrl=$chatUrl}
-            $requestedStreamers.Add($valueObject["name"], @{$valueObject["site"]=$valueObject["tag"]; streamUrl=$streamUrl; chatUrl=$chatUrl})
+            Write-Output @{$valueObject["site"]=$valueObject["tag"]; streamUrl=$streamUrl}
+            $requestedStreamers.Add($valueObject["name"], @{$valueObject["site"]=$valueObject["tag"]; streamUrl=$streamUrl})
             
             $streamCliString = createCliChromeString $streamUrl $screenWDivided3 $screenHDivided2 $upperLeftOrigin
             Write-Output $streamCliString
-            $chatCliString = createCliChromeString $chatUrl $chatW $chatH $upperLeftOrigin
-            Write-Output $chatCliString
 
             spawnStream $streamCliString
-            spawnStream $chatCliString
 
         }else {
             Write-Output @{$valueObject["site"]=$valueObject["tag"]; streamUrl=$streamUrl}
@@ -215,6 +236,23 @@ function userSelectStreamers{
     if ($requestedStreamers.Count -gt 15) {
         Write-Output("ERROR too many streams requested")
         exit
+    }
+}
+
+function userSelectChats{
+    $selection = $tagSiteKeys.Keys | Out-GridView -OutputMode Multiple
+    Write-Output("`nSelection:" + $d)
+    $chatUrl = ""
+    $chatW=360
+    $chatH=900
+    foreach($d in $selection){
+        $valueObject = $tagSiteKeys[$d]
+        if ($valueObject["site"] -ne "facebook"){
+            $chatUrl = getChatUrl $valueObject["site"] $valueObject["tag"]
+            $chatCliString = createCliChromeString $chatUrl $chatW $chatH $upperLeftOrigin
+            Write-Output $chatCliString
+            spawnStream $chatCliString
+        }
     }
 }
 
@@ -242,9 +280,10 @@ function createCliChromeString {
     $Left = $displayViewAddress.Left
     $Top = $displayViewAddress.Top
 
-    $aRandom = Get-Random -Maximum 1000000
-    $streamUrl = "--app=${streamUri} --window-position=`"${Left},${Top}`" --window-size=`"${streamW},${streamH}`""
-    #Write-Output $streamUrl
+    # $tmpDir = $env:tmp
+    # $aRandom = Get-Random -Maximum 1000000
+    $streamUrl = " --app=`"data:text/html,<html><body><script>window.moveTo(${Left},${Top});window.resizeTo(${streamW},${streamH});window.location='${streamUri}';</script></body></html>`""
+    #$streamUrl = "--app=${streamUri} --window-position=${Left},${Top} --window-size=${streamW},${streamH}"
     return $streamUrl
 }
 
@@ -255,6 +294,5 @@ function spawnStream{
     
     Write-Output("`nStarting stream: " + $cliString + "`n`n")
         Start-Sleep -s 1
-        & 'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe' $cliString
+        & 'C:\Program Files\Google\Chrome\Application\chrome.exe' $cliString
 }
-userSelectStreamers

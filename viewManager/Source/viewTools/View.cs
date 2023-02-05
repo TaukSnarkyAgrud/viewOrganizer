@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using static viewTools.DataStructs;
+using static viewTools.WindowsAPITools;
 
 namespace viewTools
 {
@@ -16,8 +18,10 @@ namespace viewTools
             dView = new DisplayView();
             dViews.Add(dView);
             wView = new WindowView(dView);
-            filterOutNonUserWindowObjects();
         }
+
+        
+
         public void filterOutNonUserWindowObjects()
         {
             // Candidates that are NOT viable are:
@@ -29,15 +33,10 @@ namespace viewTools
                 // Disqualifying attributes
                 if (window.size == 0
                 || window.ViewState == ShowWindowCommands.Hide.ToString()
-                || (window.OutSideDisplayView() && window.ViewState != ShowWindowCommands.Minimized.ToString()))
+                || (window.OutSideDisplayView() && window.ViewState != ShowWindowCommands.Minimized.ToString())
+                || !window.HasTitle())
                 {
                     window.isViableWindow = false;
-                }
-
-                // Qualifying attributes
-                if (window.HasTitle())
-                {
-                    window.isViableWindow = true;
                 }
             }
         }

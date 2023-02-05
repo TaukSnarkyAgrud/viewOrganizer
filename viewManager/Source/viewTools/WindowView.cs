@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using static viewTools.DataStructs;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace viewTools
 {
@@ -18,6 +19,8 @@ namespace viewTools
         public Dictionary<IntPtr, WindowMetadata> rootWindows;
         private List<IntPtr> windowPointersEnumerated;
         private static List<IntPtr> windowPointersFromApiEnumerated;
+
+        private List<StreamingView> streamViews;
 
         public List<IntPtr> WindowPointersEnumerated {
             get
@@ -57,6 +60,63 @@ namespace viewTools
                 return EnumnerateWindows(rootWindows);
             }
         }
+        public List<WindowMetadata> AllViableWindowObjectsEnumerated
+        {
+            get
+            {
+                AllWindowObjectsEnumerated.ForEach(w => {
+                    w.isViableWindow = WindowsAPITools.IsAltTabWindow(w.handle);
+                    if (w.size == 0
+                    || w.ViewState == ShowWindowCommands.Hide.ToString()
+                    || (w.OutSideDisplayView() && w.ViewState != ShowWindowCommands.Minimized.ToString())
+                    || !w.HasTitle())
+                    {
+                        w.isViableWindow = false;
+                    }
+                });
+                return AllWindowObjectsEnumerated.Where(x => x.isViableWindow).ToList<WindowMetadata>();
+            }
+        }
+        public List<WindowMetadata> AllNonViableWindowObjectsEnumerated
+        {
+            get
+            {
+                return AllWindowObjectsEnumerated.Where(x => !x.isViableWindow).ToList<WindowMetadata>();
+            }
+        }
+        public List<WindowMetadata> AllImmediateChildren
+        {
+            get
+            {
+                var firstChildren = new List<WindowMetadata>();
+                foreach (var rwin in rootWindows)
+                {
+                    if (rwin.Value.children != null)
+                    {
+                        firstChildren.AddRange(rwin.Value.children.Values);
+                    }
+                }
+                return firstChildren;
+            }
+        }
+
+        // Showing no such thing as second children. possibly wrong
+        public List<WindowMetadata> AllSecondChildren
+        {
+            get
+            {
+                var secondChilds = new List<WindowMetadata>();
+                foreach (var fChild in AllImmediateChildren)
+                {
+                    if (fChild.children != null)
+                    {
+                        secondChilds.AddRange(fChild.children.Values);
+                    }
+                }
+                return secondChilds;
+            }
+        }
+
 
         public WindowView(DisplayView view)
         {
@@ -78,7 +138,16 @@ namespace viewTools
                     Debug.WriteLine("");
                 }
             }
+
+            if(streamViews == null)
+            {
+                streamViews = new();
+            }
+
+            streamViews.Add(item: new StreamingView(AllViableWindowObjectsEnumerated));
         }
+
+
 
         public List<WindowMetadata> EnumnerateWindows(Dictionary<IntPtr, WindowMetadata> someWindows)
         {
@@ -122,157 +191,14 @@ namespace viewTools
                 foreach (var child in aWindowChildren)
                 {
                     // Add childs' children, if any
-                    items.AddRange(GetAllChildren(aWindow));
+                    items.AddRange(GetAllChildren(aWindow.children[child]));
                 }
             }
             return items;
         }
 
-        public List<Process> GetAllProcessesWithWindows()
-        {
-            return Process.GetProcesses().Where(p => (int)p.MainWindowHandle != 0).ToList();
-        }
-
-        public void PrintAllProcessesWithWindows()
-        {
-            var procs = GetAllProcessesWithWindows();
-            var procnum = 1;
-            try
-            {
-                foreach (var proc in procs)
-                {
-                    Debug.WriteLine($"------------------------------------------------------------------ Process {procnum} ({proc.Id})------------------------------------------------------------------\n");
-                    foreach (var prop in proc.GetType().GetProperties())
-                    {
-                        try
-                        {
-                            if (prop.ToString().Contains("MainWindowTitle"))
-                            {
-                                Debug.Write($"{prop} = ");
-                                Debug.WriteLine($"{prop.GetValue(proc)}");
-                            }
-                        }
-                        catch (Exception)
-                        {
-
-                            Debug.WriteLine("exception thrown");
-                        }
-                    }
-                    procnum++;
-                }
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        public Process GetWindowProcessMatchTitleWord(string subString)
-        {
-            var possibleProcs = GetWindowProcessesMatchTitleWord(subString);
-            if (possibleProcs.Count == 1)
-            {
-                return possibleProcs.FirstOrDefault();
-            }
-            else if (possibleProcs.Count == 1)
-            {
-                throw new Exception($"No process found contining criteria: \"{subString}\"");
-            }
-            else if (possibleProcs.Count > 1)
-            {
-                throw new Exception($"More than one process found contining criteria: \"{subString}\"");
-            }
-            return new Process();
-        }
-
-        public Process GetWindowProcessMatchProcessName(string subString)
-        {
-            var possibleProcs = GetWindowProcessesMatchProcessName(subString);
-            if (possibleProcs.Count == 1)
-            {
-                return possibleProcs.FirstOrDefault();
-            }
-            else if (possibleProcs.Count == 1)
-            {
-                throw new KeyNotFoundException($"No process found contining criteria: \"{subString}\"");
-            }
-            else if (possibleProcs.Count > 1)
-            {
-                throw new KeyNotFoundException($"More than one process found contining criteria: \"{subString}\"");
-            }
-            return new Process();
-        }
-
-        public IntPtr GetWindowHandleMatchTitleWord(string subString)
-        {
-            return GetWindowProcessMatchTitleWord(subString).MainWindowHandle;
-        }
-
-        public IntPtr GetWindowHandleMatchProcessName(string subString)
-        {
-            return GetWindowProcessMatchProcessName(subString).MainWindowHandle;
-        }
-
-        public List<Process> GetWindowProcessesMatchTitleWord(string subString)
-        {
-            var viableProcs = new List<Process>();
-            foreach (var proc in GetAllProcessesWithWindows())
-            {
-                if (proc.MainWindowTitle.ToString().Contains(subString))
-                {
-                    viableProcs.Add(proc);
-                }
-            }
-            return viableProcs;
-        }
-
-        public List<Process> GetWindowProcessesMatchProcessName(string subString)
-        {
-            var viableProcs = new List<Process>();
-            foreach (var proc in GetAllProcessesWithWindows())
-            {
-                if (proc.ProcessName.ToString().Contains(subString))
-                {
-                    viableProcs.Add(proc);
-                }
-            }
-            return viableProcs;
-        }
-
-        public void ConfigureWindowSizePosition(IntPtr hwnd, int x, int y, int width, int height)
-        {
-            WindowsAPITools.ConfigureWindowSizePosition(hwnd, x, y, width, height);
-        }
-
-        public void BringWindowTop(IntPtr hwnd)
-        {
-            WindowsAPITools.MinimizeWindow(hwnd);
-            WindowsAPITools.RestoreWindow(hwnd);
-            WindowsAPITools.BringWindowToTop(hwnd);
-        }
-
-        public void RemoveTitleBar(IntPtr hwnd)
-        {
-            WindowsAPITools.RemoveTitlebar(hwnd);
-        }
-
-        //public List<IntPtr> GetAllChildHandles(IntPtr hwnd)
-        //{
-        //    return WindowsAPITools.GetAllChildHandles(hwnd);
-        //}
-
-        //public List<IntPtr> GetAllChildChromeWigets(IntPtr parent)
-        //{
-        //    var anyWgtHdl = WindowsAPITools.GetAnyChromeWigetHandle();
-        //    Debug.WriteLine(anyWgtHdl);
-        //    var nxtHdl = WindowsAPITools.FindWindowExA(IntPtr.Zero, anyWgtHdl, "Chrome_WidgetWin_1", null);
-        //    Debug.WriteLine(nxtHdl);
-        //    return GetAllChildHandles(anyWgtHdl);
-        //}
-
         public void IngestAllWindowObjects()
         {
-            IngestChromeWindows();
-            IngestWindowsByProcess();
             IngestWindowsByAPI();
         }
 
@@ -298,48 +224,6 @@ namespace viewTools
             return true;
         }
 
-        private void IngestWindowsByProcess()
-        {
-
-            Debug.WriteLine($"\nOther Processes with handles found\n---------------------------------");
-            var windowProcesses = GetAllProcessesWithWindows();
-            foreach (var item in windowProcesses)
-            {
-                var alreadyAware = AllWindowObjectsEnumerated.FirstOrDefault(x => x.handle == item.MainWindowHandle);
-                if(alreadyAware != null)
-                {
-                    alreadyAware.mainProcess = item;
-                    continue;
-                }
-                var newWM = new WindowMetadata(item.MainWindowHandle, item);
-                GetAddWindow(newWM);
-            }
-        }
-
-        public void IngestChromeWindows()
-        {
-            try
-            {
-                var wgts = new List<IntPtr>();
-                var prcs = GetWindowProcessesMatchProcessName("chrome");
-                if (prcs.Count > 0)
-                {
-                    Debug.WriteLine("\n\nChrome process found");
-                    WindowsAPITools.GetAllChromeWigetHandles();
-                    foreach (var item in wgts)
-                    {
-                        var newWM = new WindowMetadata(item);
-                        GetAddWindow(newWM);
-                    }
-                }
-            }
-            catch (KeyNotFoundException ex)
-            {
-                Debug.WriteLine("No chrome windows found");
-                Debug.WriteLine(ex.Message);
-            }
-        }
-
         private void GetAddWindow(WindowMetadata newWM)
         {
             rootWindows ??= new
@@ -353,7 +237,7 @@ namespace viewTools
             if (newWM.IsRootParent())
             {
                 //Add the root
-                GetAddRootObject(newWM.handle, out _);
+                GetAddRootObject(newWM.handle, out newWM);
             }
             else
             {
@@ -471,6 +355,194 @@ namespace viewTools
 
             }
             return childrenPtrs;
+        }
+
+
+
+
+
+
+        //public void RemoveTitleBar(IntPtr hwnd)
+        //{
+        //    WindowsAPITools.RemoveTitlebar(hwnd);
+        //}
+
+        //public List<IntPtr> GetAllChildHandles(IntPtr hwnd)
+        //{
+        //    return WindowsAPITools.GetAllChildHandles(hwnd);
+        //}
+
+        //public List<IntPtr> GetAllChildChromeWigets(IntPtr parent)
+        //{
+        //    var anyWgtHdl = WindowsAPITools.GetAnyChromeWigetHandle();
+        //    Debug.WriteLine(anyWgtHdl);
+        //    var nxtHdl = WindowsAPITools.FindWindowExA(IntPtr.Zero, anyWgtHdl, "Chrome_WidgetWin_1", null);
+        //    Debug.WriteLine(nxtHdl);
+        //    return GetAllChildHandles(anyWgtHdl);
+        //}
+
+        public List<Process> GetAllProcessesWithWindows()
+        {
+            return Process.GetProcesses().Where(p => (int)p.MainWindowHandle != 0).ToList();
+        }
+
+        public List<Process> GetWindowProcessesMatchProcessName(string subString)
+        {
+            var viableProcs = new List<Process>();
+            foreach (var proc in GetAllProcessesWithWindows())
+            {
+                if (proc.ProcessName.ToString().Contains(subString))
+                {
+                    viableProcs.Add(proc);
+                }
+            }
+            return viableProcs;
+        }
+
+        private void IngestWindowsByProcess()
+        {
+
+            Debug.WriteLine($"\nOther Processes with handles found\n---------------------------------");
+            var windowProcesses = GetAllProcessesWithWindows();
+            foreach (var item in windowProcesses)
+            {
+                var alreadyAware = AllWindowObjectsEnumerated.FirstOrDefault(x => x.handle == item.MainWindowHandle);
+                if (alreadyAware != null)
+                {
+                    alreadyAware.mainProcess = item;
+                    continue;
+                }
+                var newWM = new WindowMetadata(item.MainWindowHandle, item);
+                GetAddWindow(newWM);
+            }
+        }
+
+        public void IngestChromeWindows()
+        {
+            try
+            {
+                var wgts = new List<IntPtr>();
+                var prcs = GetWindowProcessesMatchProcessName("chrome");
+                if (prcs.Count > 0)
+                {
+                    Debug.WriteLine("\n\nChrome process found");
+                    WindowsAPITools.GetAllChromeWigetHandles();
+                    foreach (var item in wgts)
+                    {
+                        var newWM = new WindowMetadata(item);
+                        GetAddWindow(newWM);
+                    }
+                }
+            }
+            catch (KeyNotFoundException ex)
+            {
+                Debug.WriteLine("No chrome windows found");
+                Debug.WriteLine(ex.Message);
+            }
+        }
+
+        public void ConfigureWindowSizePosition(IntPtr hwnd, int x, int y, int width, int height)
+        {
+            WindowsAPITools.ConfigureWindowSizePosition(hwnd, x, y, width, height);
+        }
+
+        public void BringWindowTop(IntPtr hwnd)
+        {
+            WindowsAPITools.MinimizeWindow(hwnd);
+            WindowsAPITools.RestoreWindow(hwnd);
+            WindowsAPITools.BringWindowToTop(hwnd);
+        }
+
+        public Process GetWindowProcessMatchTitleWord(string subString)
+        {
+            var possibleProcs = GetWindowProcessesMatchTitleWord(subString);
+            if (possibleProcs.Count == 1)
+            {
+                return possibleProcs.FirstOrDefault();
+            }
+            else if (possibleProcs.Count == 1)
+            {
+                throw new Exception($"No process found contining criteria: \"{subString}\"");
+            }
+            else if (possibleProcs.Count > 1)
+            {
+                throw new Exception($"More than one process found contining criteria: \"{subString}\"");
+            }
+            return new Process();
+        }
+
+        public Process GetWindowProcessMatchProcessName(string subString)
+        {
+            var possibleProcs = GetWindowProcessesMatchProcessName(subString);
+            if (possibleProcs.Count == 1)
+            {
+                return possibleProcs.FirstOrDefault();
+            }
+            else if (possibleProcs.Count == 1)
+            {
+                throw new KeyNotFoundException($"No process found contining criteria: \"{subString}\"");
+            }
+            else if (possibleProcs.Count > 1)
+            {
+                throw new KeyNotFoundException($"More than one process found contining criteria: \"{subString}\"");
+            }
+            return new Process();
+        }
+
+        public List<Process> GetWindowProcessesMatchTitleWord(string subString)
+        {
+            var viableProcs = new List<Process>();
+            foreach (var proc in GetAllProcessesWithWindows())
+            {
+                if (proc.MainWindowTitle.ToString().Contains(subString))
+                {
+                    viableProcs.Add(proc);
+                }
+            }
+            return viableProcs;
+        }
+
+        public IntPtr GetWindowHandleMatchTitleWord(string subString)
+        {
+            return GetWindowProcessMatchTitleWord(subString).MainWindowHandle;
+        }
+
+        public IntPtr GetWindowHandleMatchProcessName(string subString)
+        {
+            return GetWindowProcessMatchProcessName(subString).MainWindowHandle;
+        }
+
+        public void PrintAllProcessesWithWindows()
+        {
+            var procs = GetAllProcessesWithWindows();
+            var procnum = 1;
+            try
+            {
+                foreach (var proc in procs)
+                {
+                    Debug.WriteLine($"------------------------------------------------------------------ Process {procnum} ({proc.Id})------------------------------------------------------------------\n");
+                    foreach (var prop in proc.GetType().GetProperties())
+                    {
+                        try
+                        {
+                            if (prop.ToString().Contains("MainWindowTitle"))
+                            {
+                                Debug.Write($"{prop} = ");
+                                Debug.WriteLine($"{prop.GetValue(proc)}");
+                            }
+                        }
+                        catch (Exception)
+                        {
+
+                            Debug.WriteLine("exception thrown");
+                        }
+                    }
+                    procnum++;
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 }
