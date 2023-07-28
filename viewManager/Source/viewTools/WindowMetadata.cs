@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
-using System.Reflection.Metadata.Ecma335;
-using System.Threading;
-using static viewTools.DataStructs;
 
 namespace viewTools
 {
@@ -13,7 +10,8 @@ namespace viewTools
     {
         public IntPtr handle;
         public string title;
-        public Process mainProcess;
+        public Process rootProcess;
+        public int rootProcessId;
         public IntPtr rootParentHandle;
         public Dictionary<IntPtr, WindowMetadata> children;
 
@@ -24,6 +22,8 @@ namespace viewTools
         public IntPtr immediateParentHandle;
 
         public bool isViableWindow = false;
+        public bool isViableWebWindow = false;
+        public string url;
 
         public ViewPosition position
         {
@@ -48,6 +48,8 @@ namespace viewTools
             }
         }
 
+        public StreamMetadata streamMetadata;
+
 
         public WindowMetadata()
         {
@@ -61,16 +63,16 @@ namespace viewTools
 
         public WindowMetadata(IntPtr handle, Process mainProcess):this(handle)
         {
-            this.mainProcess = mainProcess;
+            rootProcess = mainProcess;
         }
 
 
         public override string ToString()
         {
-            return $"Window Object: {GetStringOrPlaceholder(mainProcess?.ProcessName, "mainProcessName")}" +
+            return $"Window Object: {GetStringOrPlaceholder(rootProcess?.ProcessName, "mainProcessName")}" +
                 $" | {GetStringOrPlaceholder(handle.ToString(), nameof(handle))} 0x{handle.ToString("x8")}" +
                 $" | {GetStringOrPlaceholder(title, nameof(title))}" +
-                $" | {GetStringOrPlaceholder(mainProcess?.Id.ToString(), "mainProcessId")}" +
+                $" | {GetStringOrPlaceholder(rootProcess?.Id.ToString(), "mainProcessId")}" +
                 $" | {GetStringOrPlaceholder(children?.ToString(), nameof(children))}" +
                 $"| {GetStringOrPlaceholder(position.ToString(), nameof(position))}" +
                 $" | {GetStringOrPlaceholder(size.ToString(), nameof(size))}" +
@@ -103,7 +105,7 @@ namespace viewTools
         }
 
 
-        public IntPtr GetRootParent(IntPtr hwnd)
+        public static IntPtr GetRootParent(IntPtr hwnd)
         {
             IntPtr hwndParent = WindowsAPITools.GetParentWrapper(hwnd);
             if (hwndParent == IntPtr.Zero)
@@ -116,27 +118,27 @@ namespace viewTools
             }
         }
 
-        public bool IsRootParent()
+        public static bool IsRootParent(WindowMetadata aWM)
         {
-            var rootPtr = GetRootParent(this.handle);
-            if (rootPtr == this.handle)
+            var rootPtr = GetRootParent(aWM.handle);
+            if (rootPtr == aWM.handle)
             {
                 return true;
             } else
             {
-                this.rootParentHandle = rootPtr;
+                aWM.rootParentHandle = rootPtr;
             }
             return false;
         }
 
-        public IntPtr GetImmediateParent(IntPtr hwnd)
+        public static IntPtr GetImmediateParent(IntPtr hwnd)
         {
             return WindowsAPITools.GetParentWrapper(hwnd);
         }
 
-        public bool HasIntermediateParent(IntPtr hwnd, IntPtr rootHandle)
+        public static bool HasIntermediateParent(WindowMetadata aWM)
         {
-            if (rootHandle == (immediateParentHandle = GetImmediateParent(hwnd)))
+            if (aWM.rootParentHandle == (aWM.immediateParentHandle = GetImmediateParent(aWM.handle)))
             {
                 return false;
             }
@@ -167,7 +169,7 @@ namespace viewTools
             var intersects = false;
             var correction = DisplayView.workingAreaPositiveCorrection();
             List<Display> displays = DisplayView.displaysInView;
-            var theWindowRectange = this.rectangle.rectangle;
+            var theWindowRectange = rectangle.rectangle;
             if (!DisplayView.workingAreaPositiveCorrection().IsEmpty)
             {
                 displays = new List<Display>();
@@ -176,7 +178,7 @@ namespace viewTools
                     var positionCorrected = CorrectPosition(dvD.position, correction);
                     displays.Add(new Display(positionCorrected, dvD.actualResolution));
                 }
-                var thisRect = this.rectangle.rectangle;
+                var thisRect = rectangle.rectangle;
                 theWindowRectange = new Rectangle(thisRect.X + correction.X, thisRect.Y + correction.Y, thisRect.Width, thisRect.Height);
             }
             foreach (var display in displays)
@@ -188,7 +190,7 @@ namespace viewTools
             }
             if (!intersects)
             {
-                Debug.WriteLine($"{this.handle}Doesn't intersect any displays");
+                Debug.WriteLine($"{handle}Doesn't intersect any displays");
             }
             return !intersects;
         }
@@ -203,6 +205,129 @@ namespace viewTools
             var translateBoundRectToPositive = maxBounds.TranslateRectangleToPositive();
             var translateWindowRectToPositive = rectangle.TranslateRectangleToPositive();
             return translateBoundRectToPositive.IntersectsWith(translateWindowRectToPositive);
+        }
+
+        public class StreamMetadata
+        {
+            public bool isStreamWindow;
+            public bool isChatWindow;
+            public string hostSite;
+            public string streamerTag;
+
+            public static List<string> hostSites = new()
+            {
+                "facebook",
+                "youtube",
+                "twitch"
+            };
+
+            public static Dictionary<string, Dictionary<string, string>> streamerTags = new()
+            {
+                { "poolshark", new(){ { "twitch", "thepoolshark" },{ "youtube", "thepoolshark" },{ "facebook", "PoolsharkGaming" } } },
+                { "lupo", new(){ { "youtube", "DrLupo" } } },
+                { "trip", new(){ { "twitch", "triple_g" } } },
+                { "pestily", new(){ { "twitch", "pestily" } } },
+                { "fab", new(){ { "youtube", "NotFabTV" }, { "twitch", "notfabtv" } } },
+                { "paul", new(){ { "twitch", "actionjaxon" } } },
+                { "jen", new(){ { "twitch", "jenntacles" } } },
+                { "aims", new(){ { "twitch", "aims" } } },
+                { "fudge", new(){ { "facebook", "fudgexl" } } },
+                { "tim", new(){ { "facebook", "Darkness429" } } },
+                { "tweety", new(){ { "twitch", "tweetyexpert" } } },
+                { "hodsey", new(){ { "twitch", "hodsy" } } },
+                { "bearki", new(){ { "twitch", "bearki" } } },
+                { "AnneMunition", new(){ { "twitch", "AnneMunition" } } },
+                { "mr___meme", new(){ { "youtube", "mr___meme" } } },
+                { "cali", new(){ { "youtube", "caliverse" } } },
+                { "clintus", new(){ { "youtube", "clintus" } } },
+                { "bull", new(){ { "facebook", "Bull1060" } } },
+                { "elliot", new(){ { "facebook", "ElliottAsAlways" } } },
+                { "mugs", new(){ { "facebook", "MugsTV" } } },
+                { "call", new(){ { "facebook", "Callofcrafters0" } } },
+                { "josh", new(){ { "youtube", "theJOSHfeed" } } },
+
+            };
+
+            public static void defineIdentity(WindowMetadata window)
+            {
+                // chrome(or other web browser in future) window but not normal window only app type webbrowser
+                // has any site name, streamer name, or significant string in its metadata
+                // TODO: write more ideas on identifying window attributes here
+                // If developer can discern a method of naming a window in inception with a unique id or attributes
+
+                defineWindowCandidacyByProcess(window);
+                defineWindowCandidacyByURL(window);
+                defineIdentityByWindowTitle(window);
+            }
+
+            private static void defineWindowCandidacyByURL(WindowMetadata window)
+            {
+                
+            }
+
+            private static void defineWindowCandidacyByProcess(WindowMetadata window)
+            {
+                //if(window.rootProcess.ProcessName == "chrome")
+                //{
+                    
+                //    window.streamMetadata.isStreamWindow = false;
+                //}
+            }
+
+            private static void defineIdentityByWindowTitle(WindowMetadata window)
+            {
+                foreach (var site in StreamMetadata.hostSites)
+                {
+                    if (window.title.ToLower().Contains(site))
+                    {
+                        InitializeStreamMetadata(window);
+                        var siteText = window.streamMetadata.hostSite;
+                        if (string.IsNullOrEmpty(siteText))
+                        {
+                            window.streamMetadata.hostSite = site;
+                        }
+                        else
+                        {
+                            window.streamMetadata.hostSite = siteText + " " + site;
+                        }
+                    }
+                }
+
+                foreach (var tag in getAllTags())
+                {
+                    if (window.title.ToLower().Contains(tag))
+                    {
+                        InitializeStreamMetadata(window);
+                        var tagText = window.streamMetadata.streamerTag;
+                        if (string.IsNullOrEmpty(tagText))
+                        {
+                            window.streamMetadata.streamerTag = tag;
+                        }
+                        else
+                        {
+                            window.streamMetadata.streamerTag = tagText + " " + tag;
+                        }
+                    }
+                }
+            }
+
+            private static List<string> getAllTags()
+            {
+                var tags = new List<string>();
+                foreach (var streamer in streamerTags)
+                {
+                    foreach (var tg in streamer.Value.Values)
+                    {
+                        tags.Add(tg);
+                    }
+                }
+                return tags;
+            }
+
+            private static void InitializeStreamMetadata(WindowMetadata aWindow)
+            {
+                aWindow.streamMetadata ??= new StreamMetadata();
+            }
         }
     }
 }

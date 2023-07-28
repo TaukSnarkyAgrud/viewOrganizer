@@ -2,11 +2,9 @@
 using System.Diagnostics;
 using System;
 using System.Linq;
-using System.Drawing;
-using System.Reflection.Metadata;
-using System.Reflection.Metadata.Ecma335;
 using static viewTools.DataStructs;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+using ChromeTools;
+using System.Threading.Tasks;
 
 namespace viewTools
 {
@@ -21,10 +19,14 @@ namespace viewTools
         private static List<IntPtr> windowPointersFromApiEnumerated;
 
         private List<StreamingView> streamViews;
+        public Dictionary<string, string> handleUrls;
+
+        private Dictionary<string, List<string>> ChromeHandlesToUrls;
 
         public List<IntPtr> WindowPointersEnumerated {
             get
             {
+                if (rootWindows == null) { return new List<IntPtr>(); }
                 if (windowPointersEnumerated == null)
                 {
                     List<IntPtr> items = new List<IntPtr>();
@@ -46,7 +48,7 @@ namespace viewTools
                     items.Add(item.handle);
                     items.AddRange(GetAllChildren(item));
                 }
-                windowPointersEnumerated= items;
+                windowPointersEnumerated = items;
             }
         }
         public List<WindowMetadata> AllWindowObjectsEnumerated
@@ -64,8 +66,15 @@ namespace viewTools
         {
             get
             {
+                // Collect Chrome url-handle pairs for use below
+                //handleUrls = CollectChromeUrlHandlePairs();
+
+                // Viability can be filtered out here for a few data points
                 AllWindowObjectsEnumerated.ForEach(w => {
+                    // Check for sequential filter in criteria
                     w.isViableWindow = WindowsAPITools.IsAltTabWindow(w.handle);
+
+                    // Check for sequential filter out criteria
                     if (w.size == 0
                     || w.ViewState == ShowWindowCommands.Hide.ToString()
                     || (w.OutSideDisplayView() && w.ViewState != ShowWindowCommands.Minimized.ToString())
@@ -73,10 +82,42 @@ namespace viewTools
                     {
                         w.isViableWindow = false;
                     }
+
+                    if (w.isViableWindow)
+                    {
+                        try
+                        {
+                            w.rootProcess = Process.GetProcessById(w.rootProcessId);
+                        }
+                        catch (System.ArgumentException)
+                        {
+                            w.isViableWindow = false;
+                        }
+                    }
+
+                    //if (handleUrls.TryGetValue(w.handle.ToString(), out var matchUrl))
+                    //{
+                    //    w.isViableWebWindow = true;
+                    //    w.url = matchUrl;
+                    //}
                 });
+
                 return AllWindowObjectsEnumerated.Where(x => x.isViableWindow).ToList<WindowMetadata>();
             }
         }
+
+        private void CollectChromeUrlHandlePairs()
+        {
+            var chromeHandler = new ChromeApiHelper();
+            var reply = chromeHandler.SendMessage("collectUrlsAndHandles");
+            ParseReplyIntoUrls(reply);
+        }
+
+        private void ParseReplyIntoUrls(Task<string> reply)
+        {
+            this.ChromeHandlesToUrls = new();
+        }
+
         public List<WindowMetadata> AllNonViableWindowObjectsEnumerated
         {
             get
@@ -84,7 +125,7 @@ namespace viewTools
                 return AllWindowObjectsEnumerated.Where(x => !x.isViableWindow).ToList<WindowMetadata>();
             }
         }
-        public List<WindowMetadata> AllImmediateChildren
+        public List<WindowMetadata> AllImmediateChildrenOfRootObjects
         {
             get
             {
@@ -100,17 +141,17 @@ namespace viewTools
             }
         }
 
-        // Showing no such thing as second children. possibly wrong
+        // Showing no second children. possibly wrong
         public List<WindowMetadata> AllSecondChildren
         {
             get
             {
                 var secondChilds = new List<WindowMetadata>();
-                foreach (var fChild in AllImmediateChildren)
+                foreach (var fChild in AllImmediateChildrenOfRootObjects)
                 {
                     if (fChild.children != null)
                     {
-                        secondChilds.AddRange(fChild.children.Values);
+                        secondChilds.AddRange(fChild.children.Values.ToList<WindowMetadata>());
                     }
                 }
                 return secondChilds;
@@ -124,8 +165,6 @@ namespace viewTools
             IngestAllWindowObjects();
 
             // Prints manifest
-            rootWindows ??= new
-                    Dictionary<IntPtr, WindowMetadata>();
             foreach (var item in rootWindows.Select(v => v.Value).ToList())
             {
                 Debug.WriteLine(item);
@@ -139,10 +178,7 @@ namespace viewTools
                 }
             }
 
-            if(streamViews == null)
-            {
-                streamViews = new();
-            }
+            streamViews ??= new();
 
             streamViews.Add(item: new StreamingView(AllViableWindowObjectsEnumerated));
         }
@@ -208,13 +244,12 @@ namespace viewTools
             WindowsAPITools.EnumWindows(EnumWindowsCallback, 0);
             foreach (var item in windowPointersFromApiEnumerated)
             {
-                var alreadyAware = AllWindowObjectsEnumerated.FirstOrDefault(x => x.handle == item);
-                if (alreadyAware != null)
-                {
-                    continue;
-                }
-                var newWM = new WindowMetadata(item);
-                GetAddWindow(newWM);
+                GetAddWindow(new WindowMetadata(item));
+            }
+
+            foreach (var windowItem in AllViableWindowObjectsEnumerated)
+            {
+                WindowMetadata.StreamMetadata.defineIdentity(windowItem);
             }
         }
 
@@ -226,26 +261,24 @@ namespace viewTools
 
         private void GetAddWindow(WindowMetadata newWM)
         {
-            rootWindows ??= new
-                    Dictionary<IntPtr, WindowMetadata>();
+            newWM.immediateParentHandle = WindowsAPITools.GetParentWrapper(newWM.handle);
+
             // If it already exists, ignore
             if (WindowViewIsAwareOfThisWindow(newWM))
             {
                 return;
             }
 
-            if (newWM.IsRootParent())
+            if (WindowMetadata.IsRootParent(newWM))
             {
-                //Add the root
+                // Add this as a root
                 GetAddRootObject(newWM.handle, out newWM);
             }
             else
             {
                 // Its a child of some parent, add its root
                 GetAddWindow(new WindowMetadata(newWM.rootParentHandle));
-
-                // Check if immediate parent is root or intermediate
-                newWM.hasIntermediateParent = newWM.HasIntermediateParent(newWM.handle, newWM.rootParentHandle);
+                return;
             }
 
             // Add immediate children
@@ -254,7 +287,12 @@ namespace viewTools
 
         private bool WindowViewIsAwareOfThisWindow(WindowMetadata newWM)
         {
-            if (WindowPointersEnumerated.Contains(newWM.handle))
+            return WindowViewIsAwareOfThisWindow(newWM.handle);
+        }
+
+        private bool WindowViewIsAwareOfThisWindow(IntPtr newWM)
+        {
+            if (WindowPointersEnumerated.Contains(newWM))
             {
                 return true;
             }
@@ -270,6 +308,8 @@ namespace viewTools
         /// <exception cref="KeyNotFoundException"></exception>
         private void GetAddRootObject(IntPtr handle, out WindowMetadata possiblyCreatedObject)
         {
+            rootWindows ??= new
+                    Dictionary<IntPtr, WindowMetadata>();
             if (rootWindows.TryGetValue(handle, out WindowMetadata value))
             {
                 possiblyCreatedObject = value;
@@ -284,7 +324,8 @@ namespace viewTools
             {
                 position = WindowsAPITools.GetWindowPosition(aRootHandle),
                 size = WindowsAPITools.GetWindowSize(aRootHandle),
-                ViewState = WindowsAPITools.GetWindowViewState(aRootHandle)
+                ViewState = WindowsAPITools.GetWindowViewState(aRootHandle),
+                rootProcessId = GetWindowProcessId(aRootHandle)
             };
             newRoot.HasTitle();
             rootWindows.Add(aRootHandle, newRoot);
@@ -296,19 +337,15 @@ namespace viewTools
          /// </summary>
          /// <param name="handle"></param>
          /// <param name="possiblyCreatedObject"></param>
-         /// <returns>True if the object was returned without being created.</returns>
          /// <exception cref="KeyNotFoundException"></exception>
         private bool GetAddChildObject(IntPtr handleChild, WindowMetadata theParent, out WindowMetadata possiblyCreatedObject)
         {
-            if (theParent.children == null)
-            {
-                theParent.children = new
+            theParent.children ??= new
                     Dictionary<IntPtr, WindowMetadata>();
-            }
             if (theParent.children.TryGetValue(handleChild, out WindowMetadata value))
             {
                 possiblyCreatedObject = value;
-                return true;
+                return false;
             }
             possiblyCreatedObject = AddChildObject(handleChild, theParent);
             return true;
@@ -320,23 +357,34 @@ namespace viewTools
             {
                 position = WindowsAPITools.GetWindowPosition(handle),
                 size = WindowsAPITools.GetWindowSize(handle),
-                ViewState = WindowsAPITools.GetWindowViewState(handle)
+                ViewState = WindowsAPITools.GetWindowViewState(handle),
+                rootProcessId = GetWindowProcessId(handle),
+                rootParentHandle = WindowMetadata.GetRootParent(handle)
             };
+            windowObjectCreation.hasIntermediateParent = WindowMetadata.HasIntermediateParent(windowObjectCreation);
             windowObjectCreation.HasTitle();
 
             theParent.children.Add(handle, windowObjectCreation);
             return windowObjectCreation;
         }
 
+        private int GetWindowProcessId(IntPtr handle)
+        {
+            // out pID is redudant, discard
+            var theThreadId = WindowsAPITools.GetWindowThreadProcessId(handle, out int theProcessId);
+            return theProcessId;
+        }
+
         private void AddImmediateChildren(WindowMetadata theParent)
         {
-            foreach (var child in GetAllChildrenFromSystem(theParent.handle))
+            foreach (var child in GetAllImmediateChildrenFromSystem(theParent.handle))
             {
-                GetAddChildObject(child, theParent, out WindowMetadata _);
+                GetAddChildObject(child, theParent, out WindowMetadata infant);
+                AddImmediateChildren(infant);
             }
         }
 
-        private List<IntPtr> GetAllChildrenFromSystem(IntPtr hwnd)
+        private List<IntPtr> GetAllImmediateChildrenFromSystem(IntPtr hwnd)
         {
             var childPtr = hwnd;
             var childrenPtrs = new List<IntPtr>();
@@ -344,16 +392,18 @@ namespace viewTools
             {
                 if (childPtr != hwnd)
                 {
-                    childrenPtrs.Add(childPtr);
+                    if (WindowsAPITools.GetParentWrapper(childPtr) == hwnd)
+                    {
+                        childrenPtrs.Add(childPtr);
+                    }
                     childPtr = WindowsAPITools.FindWindowExAWrapper(hwnd, childPtr, null, null);
                 }
                 else
                 {
                     childPtr = WindowsAPITools.FindWindowExAWrapper(hwnd, IntPtr.Zero, null, null);
                 }
-
-
             }
+
             return childrenPtrs;
         }
 
@@ -409,7 +459,7 @@ namespace viewTools
                 var alreadyAware = AllWindowObjectsEnumerated.FirstOrDefault(x => x.handle == item.MainWindowHandle);
                 if (alreadyAware != null)
                 {
-                    alreadyAware.mainProcess = item;
+                    alreadyAware.rootProcess = item;
                     continue;
                 }
                 var newWM = new WindowMetadata(item.MainWindowHandle, item);

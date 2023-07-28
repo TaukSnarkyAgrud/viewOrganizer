@@ -4,5 +4,10 @@
     <TargetFramework>net6.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
-
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+	</ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\..\ChromeTools\ChromeTools.csproj" />
+	</ItemGroup>
 </Project>

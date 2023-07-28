@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace viewTools
 {
@@ -11,10 +8,7 @@ namespace viewTools
         private Dictionary<IntPtr, WindowMetadata> StreamWindows;
         public StreamingView(List<WindowMetadata> viableWindows)
         {
-            if (StreamWindows == null)
-            {
-                StreamWindows = new();
-            }
+            StreamWindows ??= new();
 
             AddToStreamWindowList(viableWindows);
         }
@@ -39,16 +33,11 @@ namespace viewTools
 
         private bool WindowIsViableStreamWindow(WindowMetadata wndPtr)
         {
-            var isViableWindow = false;
-
-            if (wndPtr.title.Contains("Twitch")
-                || (wndPtr.title.ToLower().Contains("youtube") && !wndPtr.title.ToLower().Contains("google chrome"))
-                || wndPtr.title.Contains("Facebook"))
+            if(wndPtr.streamMetadata != null)
             {
-                isViableWindow = true;
+                return true;
             }
-
-            return isViableWindow;
+            return false;
         }
     }
 }

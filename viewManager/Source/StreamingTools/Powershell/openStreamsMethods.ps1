@@ -83,7 +83,7 @@ function getYoutubeStreamHash {
     } else {
         $streamUri = "https://www.youtube.com/${tag}/live"
         $streamHtml = Invoke-RestMethod -Uri $streamUri
-        $streamHtml | Out-File -File C:\Users\andrewta\Development\viewOrganizer\viewManager\Source\streamingTools\tmp.html
+        #$streamHtml | Out-File -File "C:\Users\andrewta\Development\viewOrganizer\viewManager\Source\StreamingTools\Powershell\${tag}_tmp.html"
         $match = Select-String "https:\/\/youtu\.be\/([A-Za-z0-9-]+)`"" -inputobject $streamHtml
         $vId = $match.Matches.groups[1].value
         $youtubeHashs[$tag] = $vId
@@ -172,7 +172,7 @@ function IsStreamerOnline{
             "youtube" {
                 Write-Host -NoNewline "youtube site for ${streamerName} "
                 $htmlReturn = (Invoke-RestMethod -Uri "https://www.youtube.com/${tagObject[tagSite]}/live")
-                #$htmlReturn | Out-File -File "C:\Users\andrewta\Development\viewOrganizer\viewManager\Source\streamingTools\tmp.html"
+                #$htmlReturn | Out-File -File "C:\Users\andrewta\Development\viewOrganizer\viewManager\Source\StreamingTools\Powershell\${streamerName}_tmp.html"
                 $tag = $tagObject[$tagSite]
                 
                 #if ((htmlHasTag $tag $htmlReturn) -and ($htmlReturn -like "*hqdefault_live.jpg*" -or $htmlReturn -like "*hq720_live.jpg*")){    

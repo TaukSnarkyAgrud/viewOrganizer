@@ -2,11 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
-using System.Reflection.Metadata;
-using System.Security.Policy;
-using System.Text;
 using System.Windows.Forms;
-using static viewTools.DataStructs;
 
 namespace viewTools
 {

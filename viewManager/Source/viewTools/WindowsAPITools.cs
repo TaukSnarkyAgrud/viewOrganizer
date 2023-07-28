@@ -5,7 +5,6 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using static viewTools.DataStructs;
-using static viewTools.WindowsAPITools;
 
 namespace viewTools
 {
@@ -20,6 +19,9 @@ namespace viewTools
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int pId);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -215,6 +217,7 @@ namespace viewTools
 
         public static IntPtr GetParentWrapper(IntPtr hwnd)
         {
+            // TODO: Does this return itself if it has no parent?
             return GetParent(hwnd);
         }
 
@@ -331,9 +334,6 @@ namespace viewTools
 
 
 
-
-
-
         // Unverified Methods
 
         // https://stackoverflow.com/questions/1363167/how-can-i-get-the-child-windows-of-a-window-given-its-hwnd
@@ -361,6 +361,7 @@ namespace viewTools
         {
             GCHandle gcChildhandlesList = GCHandle.FromIntPtr(lParam);
 
+            // TODO: Test this and note if its broken or unnecessary.
             if (gcChildhandlesList == null || gcChildhandlesList.Target == null)
             {
                 return false;

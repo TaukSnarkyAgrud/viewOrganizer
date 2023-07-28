@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30503.244
+# Visual Studio Version 17
+VisualStudioVersion = 17.4.33205.214
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "viewTools", "Source\viewTools\viewTools.csproj", "{01CC793D-5954-413A-8D99-2081CD10C1B8}"
 EndProject
@@ -11,7 +11,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "UnitTesting", "UnitTesting"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StreamingTools", "Source\StreamingTools\StreamingTools.csproj", "{E8A181D5-9376-47F2-BB53-5D0924E12928}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StreamingTesting", "UnitTesting\StreamingTesting.csproj", "{6A12C04E-F1F5-4D6C-90AA-034DD29C4B13}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StreamingTesting", "UnitTesting\StreamingTesting.csproj", "{6A12C04E-F1F5-4D6C-90AA-034DD29C4B13}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ChromeTools", "ChromeTools\ChromeTools.csproj", "{233357AB-E8A4-4268-AD52-CC8AE6F6FA6A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChromeMessagingServiceHost", "ChromeMessagingServiceHost\ChromeMessagingServiceHost.csproj", "{A2FF99D2-E8F5-407B-B86B-0E9C93CEFE5D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -35,6 +39,14 @@ Global
 		{6A12C04E-F1F5-4D6C-90AA-034DD29C4B13}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6A12C04E-F1F5-4D6C-90AA-034DD29C4B13}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6A12C04E-F1F5-4D6C-90AA-034DD29C4B13}.Release|Any CPU.Build.0 = Release|Any CPU
+		{233357AB-E8A4-4268-AD52-CC8AE6F6FA6A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{233357AB-E8A4-4268-AD52-CC8AE6F6FA6A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{233357AB-E8A4-4268-AD52-CC8AE6F6FA6A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{233357AB-E8A4-4268-AD52-CC8AE6F6FA6A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A2FF99D2-E8F5-407B-B86B-0E9C93CEFE5D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A2FF99D2-E8F5-407B-B86B-0E9C93CEFE5D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A2FF99D2-E8F5-407B-B86B-0E9C93CEFE5D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A2FF99D2-E8F5-407B-B86B-0E9C93CEFE5D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
