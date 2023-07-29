@@ -1,17 +1,21 @@
+using System;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
+using ChromeTools.Exceptions;
 
 namespace ChromeMessagingServiceHost
 {
     public class MessagingServiceViewOrganizer : BackgroundService
     {
         private readonly Serilog.ILogger _logger;
-        private NamedPipeServerStream pipeServer;
+        private NamedPipeServerStream? fromViewOrganizerPipeServer;
+        private NamedPipeClientStream? toViewOrganizerPipeClient;
         private CancellationTokenSource stoppingToken;
 
         // Define the pipe names for communication with View Organizer and Chrome extension
-        private const string viewOrganizerPipeName = "viewOrganizerPipe"; 
+        private const string viewOrganizerPipeNameFrom = "fromViewOrganizerPipe";
+        private const string viewOrganizerPipeNameTo = "toViewOrganizerPipe";
 
         // Create buffers to store messages from View Organizer and Chrome extension
         private static readonly ConcurrentQueue<string> toChromeExtenstionBuffer = new();
@@ -26,11 +30,7 @@ namespace ChromeMessagingServiceHost
         public MessagingServiceViewOrganizer(Serilog.ILogger logger)
         {
             this.stoppingToken = new();
-            pipeServer = new(
-                    viewOrganizerPipeName,
-                    PipeDirection.InOut);
             _logger = logger;
-            Thread.Sleep(TimeSpan.FromSeconds(5));
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -38,22 +38,21 @@ namespace ChromeMessagingServiceHost
             this.stoppingToken = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.Information("MessagingServiceViewOrganizer running at: {time}", DateTimeOffset.Now);
+                _logger.Information("MessagingServiceViewOrganizer running at: {time}");
                 // Start listening for messages from View Organizer and Chrome extension in separate threads
-                Task viewOrganizerListener = ListenForMessages(viewOrganizerPipeName, toChromeExtenstionBuffer);
+                Task viewOrganizerListener = ListenForMessages(viewOrganizerPipeNameFrom, toChromeExtenstionBuffer);
                 Task chromeExtensionListener = ListenForMessages(toViewOrgainzerBuffer);
 
                 // Start processing messages in separate threads
-                _logger.Information("Starting Message Processors at: {time}", DateTimeOffset.Now);
+                _logger.Information("Starting Message Processors at: {time}");
                 Task viewOrganizerProcessor = ProcessMessages(toChromeExtenstionBuffer, SendToChromeExtension, sendToChromeExtensionLock, toChromeExtensionBufferLock);
                 Task chromeExtensionProcessor = ProcessMessages(toViewOrgainzerBuffer, SendToViewOrganizer, sendToViewOrganizerLock, toViewOrganizerBufferLock);
 
-                // Wait for both listeners and processors to complete (optional)
+                //// Wait for both listeners and processors to complete (optional)
                 await Task.WhenAll(viewOrganizerListener, chromeExtensionListener, viewOrganizerProcessor, chromeExtensionProcessor);
 
                 // Additional cleanup or termination logic can be added here if needed
             }
-            pipeServer.Dispose();
         }
         protected void StopAsync()
         {
@@ -79,7 +78,7 @@ namespace ChromeMessagingServiceHost
                 // Acquire a lock before enqueuing the message to the buffer
                 lock (toViewOrganizerBufferLock)
                 {
-                    _logger.Information("Message observed from chrome at: {time}", DateTimeOffset.Now);
+                    _logger.Information("Message observed from chrome at: {time}");
                     _logger.Information(message);
                     buffer.Enqueue(message);
                 }
@@ -90,43 +89,52 @@ namespace ChromeMessagingServiceHost
         {
             while (!stoppingToken.IsCancellationRequested)
             {
+                fromViewOrganizerPipeServer ??= new(
+                    viewOrganizerPipeNameFrom,
+                    PipeDirection.In);
                 _logger.Information("Native Messaging Host is waiting for messages from {pipeName}...", pipeName);
-
-               
 
                 try
                 {
-                    using StreamReader reader = new(pipeServer, Encoding.UTF8);
+                    using StreamReader reader = new(fromViewOrganizerPipeServer, Encoding.UTF8);
                     _logger.Information("StreamReader Ready to receive...");
 
-                    if (!pipeServer.IsConnected)
+                    if (fromViewOrganizerPipeServer.IsConnected)
                     {
-                        await pipeServer.WaitForConnectionAsync();
-                        _logger.Information("Connection (for receive) initiation observed from {pipeName}...", pipeName);
+                        _logger.Information("Client still connected, when expected to not be connected.");
                     }
-                    else
-                    {
-                        _logger.Information("Client still connected");
-                    }
+                    _logger.Information("Client not connected, listener waiting(infinitly) to connect...");
+                    await fromViewOrganizerPipeServer.WaitForConnectionAsync();
+                    _logger.Information("Connection (for receive) initiation observed from {pipeName}...", pipeName);
 
                     // Read messages from the pipe and add them to the buffer
                     while (!stoppingToken.IsCancellationRequested)
                     {
-                        string? message = reader.ReadToEnd();
+                        _logger.Information("Attempting to read message...");
+                        string? message = await reader.ReadLineAsync();
                         if (string.IsNullOrEmpty(message))
                         {
 
                             _logger.Information("This Line was empty signifying the end of a message on the pipe or and empty send(an error)");
-                            // End of message or connection closed
+                            // Acquire a lock before enqueuing the message to the buffer
+                            lock (toViewOrganizerBufferLock)
+                            {
+                                buffer.Enqueue("Error: Last received message was empty.");
+                            }
+                            fromViewOrganizerPipeServer?.Dispose();
+                            fromViewOrganizerPipeServer = null;
                             break;
                         }
 
                         // Acquire a lock before enqueuing the message to the buffer
                         lock (toChromeExtensionBufferLock)
                         {
-                            _logger.Information("Message observed from chrome at: {time}", DateTimeOffset.Now);
+                            _logger.Information("Message observed and enqued from chrome at: {time}");
                             _logger.Information(message);
                             buffer.Enqueue(message);
+                            fromViewOrganizerPipeServer?.Dispose();
+                            fromViewOrganizerPipeServer = null;
+                            break;
                         }
                     }
                 }
@@ -145,35 +153,40 @@ namespace ChromeMessagingServiceHost
 
         private async Task ProcessMessages(ConcurrentQueue<string> buffer, Func<string, Task> sendMessage, object bufferLock, object processLock)
         {
-            while (!stoppingToken.IsCancellationRequested && !buffer.IsEmpty)
+            while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.Information("Messages preparing to be sent: {time}", DateTimeOffset.Now);
-                string? message = null;
-
-                // Dequeue the message from the buffer and process it under a separate lock
-                lock (bufferLock)
+                while (!buffer.IsEmpty)
                 {
-                    if (buffer.TryDequeue(out message))
+                    _logger.Information("Messages preparing to be sent: {time}");
+                    string? message = null;
+
+                    // Dequeue the message from the buffer and process it under a separate lock
+                    lock (bufferLock)
                     {
-                        // Process the message as needed
-                        // (You can add custom logic here to handle the messages)
+                        if (buffer.TryDequeue(out message))
+                        {
+                            // Process the message as needed
+                            // (You can add custom logic here to handle the messages)
+                        }
+                        else
+                        {
+                            _logger.Error("The buffer was empty when it was expected to have contents.");
+                            throw new EmptyBufferException("The buffer was empty when it was expected to have contents.");
+                        }
                     }
-                    else
+
+                    if (message != null)
                     {
-                        _logger.Error("The buffer was empty when it was expected to have contents.");
-                        throw new EmptyBufferException("The buffer was empty when it was expected to have contents.");
+                        // Send the processed message to the respective recipient asynchronously
+                        await SendWithLock(sendMessage, message, processLock);
                     }
                 }
 
-                if (message != null)
-                {
-                    // Send the processed message to the respective recipient asynchronously
-                    await SendWithLock(sendMessage, message, processLock);
-                }
 
                 // Optional: Add a delay or awaitable task to prevent busy-waiting
                 await Task.Delay(100);
             }
+            _logger.Information("Processors stopped due to Cancelation at: {time}");
         }
 
         private async Task SendWithLock(Func<string, Task> sendMessage, string message, object lockObject)
@@ -197,7 +210,7 @@ namespace ChromeMessagingServiceHost
 
         private async Task SendToChromeExtension(string message)
         {
-            _logger.Information("Message sending to chrome at: {time}", DateTimeOffset.Now);
+            _logger.Information("Message sending to chrome at: {time}");
             _logger.Information(message);
             // Send the message to Chrome extension via stdout
             Console.Write(message.Length.ToString("x8")); // Send the message length in hexadecimal format
@@ -207,16 +220,35 @@ namespace ChromeMessagingServiceHost
 
         private async Task SendToViewOrganizer(string message)
         {
-            _logger.Information("Message to be sent to ViewOrganizer at: {time}", DateTimeOffset.Now);
+            _logger.Information("Message to be sent to ViewOrganizer.");
             _logger.Information(message);
 
-            if (pipeServer.IsConnected && pipeServer.CanWrite)
-            {
-                _logger.Information("Pipe Connected. Message sending to ViewOrganizer at: {time}", DateTimeOffset.Now);
-                using StreamWriter writer = new(pipeServer);
+            // Prepare the message to send to Native Messaging Host
+            string messageToSend = message;
 
-                await writer.WriteLineAsync(message);
-                await writer.FlushAsync();
+            // Write the message to the pipe
+            byte[] messageBytes = Encoding.UTF8.GetBytes(messageToSend);
+
+            toViewOrganizerPipeClient = new NamedPipeClientStream(".", viewOrganizerPipeNameTo, PipeDirection.Out);
+
+            if (!toViewOrganizerPipeClient.IsConnected)
+            {
+                _logger.Information("Opening connection with ViewOrgaizer for sending messages.");
+                await toViewOrganizerPipeClient.ConnectAsync();
+            }
+
+            if (toViewOrganizerPipeClient.IsConnected)
+            {
+                await toViewOrganizerPipeClient.WriteAsync(messageBytes, 0, messageBytes.Length);
+                await toViewOrganizerPipeClient.FlushAsync();
+                toViewOrganizerPipeClient.WaitForPipeDrain();
+                _logger.Information("Message sent to ViewOrganizer."); 
+                toViewOrganizerPipeClient?.Dispose();
+                toViewOrganizerPipeClient = null;
+            }
+            else
+            {
+                throw new ConnectionTerminatedEarlyException("The Connection was terminated before the message could be sent.");
             }
         }
     }

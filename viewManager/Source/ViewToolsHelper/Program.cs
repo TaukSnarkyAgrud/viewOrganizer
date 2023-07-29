@@ -2,17 +2,18 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ViewToolsHelper
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             var chHelper = new ChromeApiHelper();
             while (true)
             {
-                var response = chHelper.SendMessage("collectUrlsAndHandles");
+                var response = await chHelper.SendMessage("collectUrlsAndHandles");
                 Thread.Sleep(TimeSpan.FromSeconds(3));
             }
             //var aObj = new viewTools.Tools();

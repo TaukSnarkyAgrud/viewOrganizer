@@ -3,7 +3,7 @@
 namespace ChromeTools.Exceptions
 {
     [Serializable]
-    internal class ConnectionTerminatedEarlyException : Exception
+    public class ConnectionTerminatedEarlyException : Exception
     {
         public ConnectionTerminatedEarlyException()
         {
