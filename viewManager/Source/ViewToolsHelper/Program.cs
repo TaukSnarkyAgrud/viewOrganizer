@@ -11,11 +11,7 @@ namespace ViewToolsHelper
         static async Task Main(string[] args)
         {
             var chHelper = new ChromeApiHelper();
-            while (true)
-            {
-                var response = await chHelper.SendMessage("collectUrlsAndHandles");
-                Thread.Sleep(TimeSpan.FromSeconds(3));
-            }
+            var response = await chHelper.SendMessage("collectUrlsAndHandles");
             //var aObj = new viewTools.Tools();
             //var breaker = "----------------------------------------------------------------------------------------------------------------------------------------";
             //Debug.WriteLine($"{breaker}START");

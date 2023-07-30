@@ -3,9 +3,14 @@
   "name": "collectHandlesUrls",
   "version": "1.0",
   "description": "Collects the open window handles and urls of all tabs. Urls are saved in a dictionary with the handles as the keys",
-  "permissions": [ "tabs", "nativeMessaging" ],
-
+  "permissions": [
+    "tabs",
+    "nativeMessaging",
+    "scripting",
+    "alarms"
+  ],
   "background": {
-    "service_worker": "collectHandlesUrls.js"
+    "service_worker": "background.js",
+    "type": "module"
   }
 }

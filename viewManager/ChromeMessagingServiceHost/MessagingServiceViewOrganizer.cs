@@ -12,6 +12,7 @@ namespace ChromeMessagingServiceHost
         private NamedPipeServerStream? fromViewOrganizerPipeServer;
         private NamedPipeClientStream? toViewOrganizerPipeClient;
         private CancellationTokenSource stoppingToken;
+        private IHostApplicationLifetime _appLifetime;
 
         // Define the pipe names for communication with View Organizer and Chrome extension
         private const string viewOrganizerPipeNameFrom = "fromViewOrganizerPipe";
@@ -27,24 +28,28 @@ namespace ChromeMessagingServiceHost
         private static readonly object toChromeExtensionBufferLock = new();
         private static readonly object toViewOrganizerBufferLock = new();
 
-        public MessagingServiceViewOrganizer(Serilog.ILogger logger)
+        public MessagingServiceViewOrganizer(Serilog.ILogger logger, IHostApplicationLifetime appLifetime)
         {
             this.stoppingToken = new();
             _logger = logger;
+            _appLifetime = appLifetime;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            // Listen for the cancellation event and perform cleanup tasks
+            _appLifetime.ApplicationStopping.Register(OnApplicationStopping);
             this.stoppingToken = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.Information("MessagingServiceViewOrganizer running at: {time}");
+                _logger.Information("MessagingServiceViewOrganizer running.");
                 // Start listening for messages from View Organizer and Chrome extension in separate threads
-                Task viewOrganizerListener = ListenForMessages(viewOrganizerPipeNameFrom, toChromeExtenstionBuffer);
+                Task viewOrganizerListener = ListenForMessagesFromViewOrganizer(toChromeExtenstionBuffer);
                 Task chromeExtensionListener = ListenForMessages(toViewOrgainzerBuffer);
 
                 // Start processing messages in separate threads
-                _logger.Information("Starting Message Processors at: {time}");
+                _logger.Information("Starting Message Processors.");
                 Task viewOrganizerProcessor = ProcessMessages(toChromeExtenstionBuffer, SendToChromeExtension, sendToChromeExtensionLock, toChromeExtensionBufferLock);
                 Task chromeExtensionProcessor = ProcessMessages(toViewOrgainzerBuffer, SendToViewOrganizer, sendToViewOrganizerLock, toViewOrganizerBufferLock);
 
@@ -54,6 +59,17 @@ namespace ChromeMessagingServiceHost
                 // Additional cleanup or termination logic can be added here if needed
             }
         }
+
+        private void OnApplicationStopping()
+        {
+            // Do things when halt is triggered.
+        }
+
+        private void HaltApplication()
+        {
+            _appLifetime.StopApplication();
+        }
+
         protected void StopAsync()
         {
             _logger.Information("Cancellation Requested. Stopping Worker Service.");
@@ -63,11 +79,15 @@ namespace ChromeMessagingServiceHost
 
         private async Task ListenForMessages(ConcurrentQueue<string> buffer)
         {
-            // Read messages from stdin (The Customer - Chrome extension)
-            using StreamReader reader = new(Console.OpenStandardInput());
+            _logger.Information("Native Messaging Host is waiting for messages from View Organizer...");
+
+            // Read messages from stdin
+            using StreamReader reader = new(Console.OpenStandardInput(), Encoding.UTF8);
+            _logger.Information("Chrome StreamReader Ready to receive...");
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                _logger.Information("Attempting to read message from Chrome NMAPI...");
                 string? message = await reader.ReadLineAsync();
                 if (string.IsNullOrEmpty(message))
                 {
@@ -78,26 +98,26 @@ namespace ChromeMessagingServiceHost
                 // Acquire a lock before enqueuing the message to the buffer
                 lock (toViewOrganizerBufferLock)
                 {
-                    _logger.Information("Message observed from chrome at: {time}");
+                    _logger.Information("Message observed from chrome.");
                     _logger.Information(message);
                     buffer.Enqueue(message);
                 }
             }
         }
 
-        private async Task ListenForMessages(string pipeName, ConcurrentQueue<string> buffer)
+        private async Task ListenForMessagesFromViewOrganizer(ConcurrentQueue<string> buffer)
         {
             while (!stoppingToken.IsCancellationRequested)
             {
                 fromViewOrganizerPipeServer ??= new(
                     viewOrganizerPipeNameFrom,
                     PipeDirection.In);
-                _logger.Information("Native Messaging Host is waiting for messages from {pipeName}...", pipeName);
+                _logger.Information("Native Messaging Host is waiting for messages from View Organizer...");
 
                 try
                 {
                     using StreamReader reader = new(fromViewOrganizerPipeServer, Encoding.UTF8);
-                    _logger.Information("StreamReader Ready to receive...");
+                    _logger.Information("NMH StreamReader Ready to receive...");
 
                     if (fromViewOrganizerPipeServer.IsConnected)
                     {
@@ -105,12 +125,12 @@ namespace ChromeMessagingServiceHost
                     }
                     _logger.Information("Client not connected, listener waiting(infinitly) to connect...");
                     await fromViewOrganizerPipeServer.WaitForConnectionAsync();
-                    _logger.Information("Connection (for receive) initiation observed from {pipeName}...", pipeName);
+                    _logger.Information("Connection (for receive) initiation observed from View Organizer...");
 
                     // Read messages from the pipe and add them to the buffer
                     while (!stoppingToken.IsCancellationRequested)
                     {
-                        _logger.Information("Attempting to read message...");
+                        _logger.Information("Attempting to read message from pipe...");
                         string? message = await reader.ReadLineAsync();
                         if (string.IsNullOrEmpty(message))
                         {
@@ -129,7 +149,7 @@ namespace ChromeMessagingServiceHost
                         // Acquire a lock before enqueuing the message to the buffer
                         lock (toChromeExtensionBufferLock)
                         {
-                            _logger.Information("Message observed and enqued from chrome at: {time}");
+                            _logger.Information("Message observed and enqued from ViewOrganizer.");
                             _logger.Information(message);
                             buffer.Enqueue(message);
                             fromViewOrganizerPipeServer?.Dispose();
@@ -157,7 +177,7 @@ namespace ChromeMessagingServiceHost
             {
                 while (!buffer.IsEmpty)
                 {
-                    _logger.Information("Messages preparing to be sent: {time}");
+                    _logger.Information("Messages preparing to be sent...");
                     string? message = null;
 
                     // Dequeue the message from the buffer and process it under a separate lock
@@ -210,12 +230,14 @@ namespace ChromeMessagingServiceHost
 
         private async Task SendToChromeExtension(string message)
         {
-            _logger.Information("Message sending to chrome at: {time}");
-            _logger.Information(message);
+            _logger.Information("Message sending to chrome...");
+            _logger.Information(message.Length.ToString("x8") + message+@"\n");
+
             // Send the message to Chrome extension via stdout
             Console.Write(message.Length.ToString("x8")); // Send the message length in hexadecimal format
-            Console.Write(message);
+            Console.Write(message+'\n');
             await Console.Out.FlushAsync();
+            _logger.Information("Message sent to chrome...");
         }
 
         private async Task SendToViewOrganizer(string message)

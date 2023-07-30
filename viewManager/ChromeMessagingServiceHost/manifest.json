@@ -3,5 +3,5 @@
   "description": "ChromeNativeMessagingHost",
   "path": "C:\\Program Files\\ChromeNativeMessagingHost\\ChromeMessagingServiceHost.exe",
   "type": "stdio",
-  "allowed_origins": [ "chrome-extension://bgcmimngpkfdpacjbjggggeifgdokjlp/" ]
+  "allowed_origins": [ "chrome-extension://cahioohddbbejdpfgjpfblocneiibagb/" ]
 }

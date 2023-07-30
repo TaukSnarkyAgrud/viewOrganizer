@@ -1,9 +1,9 @@
 // Initialize the handlesToUrls object to store window handles and their corresponding tabs
-let handlesToUrls = {};
-let scheduleAnUpdate = false;
-let updateInterval = 1000; //milliseconds
-let lastUpdateTime = Date.now();
-let port = null; // Variable to store the port for communication with the Native Messaging Host
+self.handlesToUrls = {};
+self.scheduleAnUpdate = false;
+self.updateInterval = 1000; //milliseconds
+self.lastUpdateTime = Date.now();
+self.port = null; // Variable to store the port for communication with the Native Messaging Host
 
 // Function to update handlesToUrls object and send it to the native messaging host
 function updateHandlesToUrls() {
@@ -57,6 +57,7 @@ function sendMessageToNativeHost(handlesToUrls) {
 
 // Function to connect to the Native Messaging Host (mailman)
 function connectToNativeHost() {
+    console.log("Connecting to Native Messaging Host...");
     // Use chrome.runtime.connectNative to open a port
     port = chrome.runtime.connectNative('com.pairofdice.vieworganizer');
 
@@ -64,21 +65,39 @@ function connectToNativeHost() {
     port.onDisconnect.addListener(() => {
         port = null; // Reset the port variable when the port is closed
     });
+    console.log("Connected to Native Messaging Host...");
 }
 
 function stopInterval() {
     clearInterval(iObject);
 }
 
-self.addEventListener('extMessage', (event) => {
-    // Respond to messages sent from other parts of the extension
-    if (event.data && event.data.type === 'connect') {
-        connectToNativeHost();
-    }
-    if (event.data && event.data.type === 'schedule') {
-        scheduleAnUpdateNow();
-    }
-    if (event.data && event.data.type === 'check') {
+chrome.tabs.onCreated.addListener(scheduleAnUpdateNow());
+chrome.tabs.onUpdated.addListener(scheduleAnUpdateNow());
+chrome.tabs.onRemoved.addListener(scheduleAnUpdateNow());
+chrome.windows.onCreated.addListener(scheduleAnUpdateNow());
+chrome.windows.onRemoved.addListener(scheduleAnUpdateNow());
+
+// Set initial alarm after extension installation/refresh
+chrome.runtime.onInstalled.addListener(() => {
+    console.log("Creating alarm");
+    chrome.alarms.create('myAlarm', { delayInMinutes: 0.5, periodInMinutes: 1.2 });
+});
+
+// Add alarm event listener
+chrome.alarms.onAlarm.addListener((alarm) => {
+    console.log("Alarm triggered. Checking for a scheduled send");
+    if (alarm.name === 'myAlarm') {
         checkForActivation();
+        // Schedule the next alarm
+        const randomDelay = Math.random() * 2.5 + 1.2; // Random delay between 0.5 and 3 seconds
+        console.log("Recreating alarm");
+        chrome.alarms.create('myAlarm', { delayInMinutes: randomDelay / 60, periodInMinutes: 1.2 });
     }
 });
+
+// Call the connectToNativeHost function when the extension is loaded
+connectToNativeHost();
+
+// Call updateHandlesToUrls() function when the extension is loaded and launched
+scheduleAnUpdateNow();
