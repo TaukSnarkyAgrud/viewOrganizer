@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
+using System.Text.Json;
 using ChromeTools.Exceptions;
 
 namespace ChromeMessagingServiceHost
@@ -46,17 +47,30 @@ namespace ChromeMessagingServiceHost
                 _logger.Information("MessagingServiceViewOrganizer running.");
                 // Start listening for messages from View Organizer and Chrome extension in separate threads
                 Task viewOrganizerListener = ListenForMessagesFromViewOrganizer(toChromeExtenstionBuffer);
-                Task chromeExtensionListener = ListenForMessages(toViewOrgainzerBuffer);
 
                 // Start processing messages in separate threads
                 _logger.Information("Starting Message Processors.");
                 Task viewOrganizerProcessor = ProcessMessages(toChromeExtenstionBuffer, SendToChromeExtension, sendToChromeExtensionLock, toChromeExtensionBufferLock);
                 Task chromeExtensionProcessor = ProcessMessages(toViewOrgainzerBuffer, SendToViewOrganizer, sendToViewOrganizerLock, toViewOrganizerBufferLock);
 
+                await sendOneReadyToChromeAsync();
+                Task chromeExtensionListener = ListenForMessages(toViewOrgainzerBuffer);
+
                 //// Wait for both listeners and processors to complete (optional)
                 await Task.WhenAll(viewOrganizerListener, chromeExtensionListener, viewOrganizerProcessor, chromeExtensionProcessor);
 
                 // Additional cleanup or termination logic can be added here if needed
+            }
+        }
+
+        private async Task sendOneReadyToChromeAsync()
+        {
+            await Task.Delay(7000);
+            _logger.Information("Sending Ready Message.");
+            lock (toChromeExtensionBufferLock)
+            {
+                string readyMessage = "{\"type\":\"ready\"}";
+                toChromeExtenstionBuffer.Enqueue(readyMessage);
             }
         }
 
@@ -67,6 +81,7 @@ namespace ChromeMessagingServiceHost
 
         private void HaltApplication()
         {
+            _logger.Information("Halt Application Initiated.");
             _appLifetime.StopApplication();
         }
 
@@ -79,7 +94,7 @@ namespace ChromeMessagingServiceHost
 
         private async Task ListenForMessages(ConcurrentQueue<string> buffer)
         {
-            _logger.Information("Native Messaging Host is waiting for messages from View Organizer...");
+            _logger.Information("Native Messaging Host is waiting for messages from Chrome NMAPI...");
 
             // Read messages from stdin
             using StreamReader reader = new(Console.OpenStandardInput(), Encoding.UTF8);
@@ -87,11 +102,11 @@ namespace ChromeMessagingServiceHost
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.Information("Attempting to read message from Chrome NMAPI...");
                 string? message = await reader.ReadLineAsync();
                 if (string.IsNullOrEmpty(message))
                 {
-                    // End of message or connection closed
+                    _logger.Information("Message from chrome was null or empty. Possible EOF.");
+                    //HaltApplication();
                     break;
                 }
 
@@ -231,11 +246,17 @@ namespace ChromeMessagingServiceHost
         private async Task SendToChromeExtension(string message)
         {
             _logger.Information("Message sending to chrome...");
-            _logger.Information(message.Length.ToString("x8") + message+@"\n");
+            _logger.Information(message);
+
+            _logger.Information("Converting message to JSON...");
+            var convertedMessage = JsonSerializer.SerializeToUtf8Bytes(message);
+            byte[] messageLengthBytes = BitConverter.GetBytes(convertedMessage.Length);
+            _logger.Information(Encoding.UTF8.GetString(messageLengthBytes) + Encoding.UTF8.GetString(convertedMessage));
 
             // Send the message to Chrome extension via stdout
-            Console.Write(message.Length.ToString("x8")); // Send the message length in hexadecimal format
-            Console.Write(message+'\n');
+            Console.OpenStandardOutput().Write(messageLengthBytes);
+            Console.OpenStandardOutput().Write(convertedMessage);
+            Console.Write("\n");
             await Console.Out.FlushAsync();
             _logger.Information("Message sent to chrome...");
         }

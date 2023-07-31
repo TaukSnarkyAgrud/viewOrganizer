@@ -10,7 +10,7 @@
     "alarms"
   ],
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "collectHandlesUrls.js",
     "type": "module"
   }
 }
