@@ -1,67 +1,76 @@
 // Initialize the handlesToUrls object to store window handles and their corresponding tabs
-self.handlesToUrls = {};
-self.scheduleAnUpdate = false;
-self.updateInterval = 1000; //milliseconds
-self.lastUpdateTime = Date.now();
+self.debounceTimeout = null
+self.debounceDelay = 2500; //milliseconds
 self.port = null; // Variable to store the port for communication with the Native Messaging Host
 self.isHostReady = false;
 
-// Function to update handlesToUrls object and send it to the native messaging host
-function updateHandlesToUrls() {
+async function updateHandlesToUrls() {
+    const tabsList = [];
     // Collect window handles and associated URLs
-    chrome.windows.getAll({ populate: true }, function (windows) {
-        windows.forEach(function (window) {
-            const windowHandle = window.id;
-            console.log(windowHandle);
-
-            const tabUrls = window.tabs.map(function (tab) {
-                return tab.url;
+    const windowList = await new Promise((resolve, reject) => {
+        chrome.windows.getAll({ populate: true }, (windows) => {
+            let windowListM = []
+            windows.forEach((window) => {
+                windowListM.push(window.id)
             });
-            console.log(tabUrls);
-
-            handlesToUrls[windowHandle] = tabUrls;
+            resolve(windowListM)
         });
     });
+    for (const windowId of windowList) {
+        console.log(`Window ID: ${windowId}`);
+        const tabsListPerWindow = await new Promise((resolve, reject) => {
+            chrome.tabs.query({ windowId: windowId }, (tabs) => {
+                console.log(`  Tabs count: ${tabs.length}`);
+                resolve(tabs)
+            });
+        });
+        tabsListPerWindow.forEach(m => tabsList.push(m))
+    }
+    logWindowData(tabsList);
 
     // Send the updated handlesToUrls object to the native messaging host
-    sendMessageToNativeHost(handlesToUrls);
-    scheduleAnUpdate = false;
-    lastUpdateTime = Date.now();
-
+    sendMessageToNativeHost(JSON.stringify(tabsList));
 }
 
-function checkForActivation() {
-    // Update the lastUpdateTime with the current time when scheduleAnUpdate is true
-    if (!isHostReady) {
-        console.log("Host not ready to receive. Cancelling Event.");
+function logWindowData(tabs) {
+    console.log("Object log start \\/ \\/ \\/ \\/")
+    for (const tab of tabs) {
+        console.log(`  Tab ID: ${tab.id}`);
+        console.log(`  Tab URL: ${tab.url}`);
+        console.log(`  Tab window: ${tab.windowId}`);
     }
-    else {
-        if (scheduleAnUpdate) {
-            console.log("Host ready to receive. Event is scheduled.");
-            const currentTime = Date.now();
-            const timeDifference = currentTime - lastUpdateTime;
-
-            if (timeDifference >= updateInterval) {
-                console.log("Last update was not recent. Sending update.");
-                updateHandlesToUrls();
-            }
-        }
-    }
+    console.log("Object log End /\\ /\\ /\\ /\\ ")
 }
 
 function scheduleAnUpdateNow() {
-    console.log("Changes observed. Scheduling update push.");
-    scheduleAnUpdate = true;
+    console.log("Changes observed. Debounced action Scheduled.");
+    // Clear any previously scheduled action
+    clearTimeout(debounceTimeout);
+
+    // Schedule a new action to be performed after the debounceDelay
+    debounceTimeout = setTimeout(() => {
+        updateHandlesToUrls();
+    }, debounceDelay);
 }
 
 // Function to send a message to the native messaging host
 function sendMessageToNativeHost(handlesToUrls) {
-    // Use the chrome.runtime.sendNativeMessage() method to send the message to the host
-    console.log("Sending data as reply...");
+    // Send the message
+    console.log("Sending update...");
     port.postMessage(
         { action: "urlsAndHandlesData", data: handlesToUrls }
     );
-    console.log("data reply sent...");
+    console.log("Update sent...");
+}
+
+// Function to send a heartbeat message to the native messaging host
+function sendHeartbeatMessageToNativeHost() {
+    // Send the message
+    console.log("Sending heartbeat...");
+    port.postMessage(
+        { action: "heartbeat" }
+    );
+    console.log("Heartbeat sent...");
 }
 
 // Event listeners to track changes in URLs, tabs, and windows
@@ -75,6 +84,7 @@ function connectToNativeHost() {
 
     // Add an onDisconnect listener to handle when the port is closed
     port.onDisconnect.addListener(() => {
+        console.log("Disconnect detected...");
         port = null; // Reset the port variable when the port is closed
     });
     console.log("Connected to Native Messaging Host...");// Listen for read message
@@ -94,33 +104,35 @@ function connectToNativeHost() {
     });
 }
 
-function stopInterval() {
-    clearInterval(iObject);
-}
-
-chrome.tabs.onCreated.addListener(scheduleAnUpdateNow());
-chrome.tabs.onUpdated.addListener(scheduleAnUpdateNow());
-chrome.tabs.onRemoved.addListener(scheduleAnUpdateNow());
-chrome.windows.onCreated.addListener(scheduleAnUpdateNow());
-chrome.windows.onRemoved.addListener(scheduleAnUpdateNow());
-
-// Set initial alarm after extension installation/refresh
-chrome.runtime.onInstalled.addListener(() => {
-    console.log("Creating alarm");
-    chrome.alarms.create('myAlarm', { delayInMinutes: 0.5, periodInMinutes: 1.2 });
+chrome.tabs.onCreated.addListener((tabObject) => {
+    console.log("Tab creation observed...");
+    scheduleAnUpdateNow();
 });
-
-// Add alarm event listener
-chrome.alarms.onAlarm.addListener((alarm) => {
-    console.log("Alarm triggered. Checking for a scheduled send");
-    if (alarm.name === 'myAlarm') {
-        checkForActivation();
-        // Schedule the next alarm
-        const randomDelay = Math.random() * 2.5 + 1.2; // Random delay between 0.5 and 3 seconds
-        console.log("Recreating alarm");
-        chrome.alarms.create('myAlarm', { delayInMinutes: randomDelay / 60, periodInMinutes: 1.2 });
-    }
+chrome.tabs.onRemoved.addListener((id, removeObject) => {
+    console.log("Tab removal observed...");
+    scheduleAnUpdateNow();
 });
+chrome.tabs.onUpdated.addListener((id, changeInfo, tabObject) => {
+    console.log("Tab update observed...");
+    scheduleAnUpdateNow();
+});
+chrome.tabs.onDetached.addListener((id, detachObject) => {
+    console.log("Tab detached observed...");
+    scheduleAnUpdateNow();
+});
+chrome.tabs.onAttached.addListener((id, attachObject) => {
+    console.log("Tab attached observed...");
+    scheduleAnUpdateNow();
+});
+chrome.windows.onCreated.addListener((windowObject) => {
+    console.log("Window creation observed...");
+    scheduleAnUpdateNow();
+});
+chrome.windows.onRemoved.addListener((windowId) => {
+    console.log("Window removal observed...");
+    scheduleAnUpdateNow();
+});
+// TODO: pass window state to manager and use this to help with mgmt https://developer.chrome.com/docs/extensions/reference/windows/#type-WindowState
 
 // Call the connectToNativeHost function when the extension is loaded
 connectToNativeHost();
