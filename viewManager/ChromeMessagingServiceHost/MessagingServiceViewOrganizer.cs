@@ -17,20 +17,22 @@ namespace ChromeMessagingServiceHost
         private CancellationTokenSource stoppingToken;
         private IHostApplicationLifetime _appLifetime;
 
-        private readonly int messgengerReadyToRecieveChromeDelay = 5000; // 10 seconds
+        private readonly int messgengerReadyToRecieveChromeDelay = 2000; // 10 seconds
 
         private readonly int heartbeatTimeout = 80000; // 80 seconds
         private readonly int heartbeatInterval = 15000; // 15 seconds
         private bool keepAlive = false;
-        private int BetweenMessageDelay = 3000;
+        private int BetweenMessageDelay = 1500;
+        private double sendTimeout = 5000;
+        private int messageTTL = 3000;
 
         // Define the pipe names for communication with View Organizer and Chrome extension
         private const string viewOrganizerPipeNameFrom = "fromViewOrganizerPipe";
         private const string viewOrganizerPipeNameTo = "toViewOrganizerPipe";
 
         // Create buffers to store messages from View Organizer and Chrome extension
-        private static readonly ConcurrentQueue<string> toChromeExtenstionBuffer = new();
-        private static readonly ConcurrentQueue<string> toViewOrgainzerBuffer = new();
+        private static readonly ConcurrentQueue<MessageObject> toChromeExtenstionBuffer = new();
+        private static readonly ConcurrentQueue<MessageObject> toViewOrgainzerBuffer = new();
 
         // Lock objects for synchronization
         private static readonly object sendToChromeExtensionLock = new();
@@ -76,7 +78,9 @@ namespace ChromeMessagingServiceHost
             // Start processing messages in separate threads
             _logger.Information("Starting Message Processors.");
             viewOrganizerProcessor = ProcessMessages("chrome", toChromeExtenstionBuffer, SendToChromeExtension, toChromeExtensionBufferLock, sendToChromeExtensionLock);
-            chromeExtensionProcessor = ProcessMessages("viewOrganizer", toViewOrgainzerBuffer, SendToViewOrganizer, toViewOrganizerBufferLock, sendToViewOrganizerLock );
+            chromeExtensionProcessor = Task.Run(async () => {
+                await ProcessMessages("viewOrganizer", toViewOrgainzerBuffer, SendToViewOrganizer, toViewOrganizerBufferLock, sendToViewOrganizerLock );
+            });
 
             // Tell Chrome ready to receive
             var sendReady = sendOneReadyToChromeAsync();
@@ -157,7 +161,8 @@ namespace ChromeMessagingServiceHost
             }
             try
             {
-                toChromeExtenstionBuffer.Enqueue("{\"type\":\"heartbeat\"}");
+                MessageObject newMessage = new("{\"type\":\"heartbeat\"}");
+                toChromeExtenstionBuffer.Enqueue(newMessage);
             }
             finally
             {
@@ -196,7 +201,8 @@ namespace ChromeMessagingServiceHost
             try
             {
                 string readyMessage = "{\"type\":\"ready\"}";
-                toChromeExtenstionBuffer.Enqueue(readyMessage);
+                MessageObject newMessage = new(readyMessage);
+                toChromeExtenstionBuffer.Enqueue(newMessage);
             }
             finally
             {
@@ -218,11 +224,14 @@ namespace ChromeMessagingServiceHost
             try
             {
                 string aMess = "{\"type\":\"chicken\"}";
-                toChromeExtenstionBuffer.Enqueue(aMess);
+                MessageObject newMessage = new(aMess);
+                toChromeExtenstionBuffer.Enqueue(newMessage);
                 aMess = "{\"type\":\"spannered\"}";
-                toChromeExtenstionBuffer.Enqueue(aMess);
+                newMessage = new(aMess);
+                toChromeExtenstionBuffer.Enqueue(newMessage);
                 aMess = "{\"type\":\"pilton\"}";
-                toChromeExtenstionBuffer.Enqueue(aMess);
+                newMessage = new(aMess);
+                toChromeExtenstionBuffer.Enqueue(newMessage);
             }
             finally
             {
@@ -252,7 +261,7 @@ namespace ChromeMessagingServiceHost
             stoppingToken.Cancel();
         }
 
-        private async Task ListenForMessages(ConcurrentQueue<string> buffer)
+        private async Task ListenForMessages(ConcurrentQueue<MessageObject> buffer)
         {
             _logger.Information("Native Messaging Host is waiting for messages from Chrome NMAPI...");
 
@@ -266,13 +275,14 @@ namespace ChromeMessagingServiceHost
             while (true)
             {
                 // Read the message length header
-                var numberOfBytesRead = await reader.ReadAsync(headerBuffer, 0, headerBuffer.Length);
+                var numberOfHeaderBytesRead = await reader.ReadAsync(headerBuffer, 0, headerBuffer.Length);
 
                 // Check if the header is read correctly
-                if (!BytesAreValidMessageHeader(numberOfBytesRead, headerBuffer, out messageLength))
+                if (!BytesAreValidMessageHeader(numberOfHeaderBytesRead, headerBuffer, out messageLength))
                 {
                     _logger.Error("Error reading message length header. Flushing the stream.");
                     reader.DiscardBufferedData();
+                    await Task.Delay(TimeSpan.FromMilliseconds(BetweenMessageDelay));
                     continue;
                 }
 
@@ -291,7 +301,7 @@ namespace ChromeMessagingServiceHost
                 _logger.Information("Reading Message...");
                 // Read the entire message based on the message length
                 var messageBuffer = new char[messageLength];
-                numberOfBytesRead = await reader.ReadAsync(messageBuffer, 0, messageLength);
+                var numberOfBytesRead = await reader.ReadAsync(messageBuffer, 0, messageLength);
 
                 // Check if the message is read correctly
                 if (numberOfBytesRead < messageLength)
@@ -317,13 +327,15 @@ namespace ChromeMessagingServiceHost
                     _logger.Information(message);
                     //var incoming = JsonConvert.DeserializeObject<GenericChromeMessage>(message);
                     //_logger.Information(incoming.Action + " " + incoming.Data);
-                    buffer.Enqueue(message);
+                    MessageObject newMessage = new(message);
+                    buffer.Enqueue(newMessage);
                     _logger.Information("Message Enqueued to ViewOrganizer");
                 }
                 finally
                 {
                     Monitor.Exit(toViewOrganizerBufferLock);
                 }
+                await Task.Delay(TimeSpan.FromMilliseconds(BetweenMessageDelay));
             }
         }
 
@@ -346,7 +358,7 @@ namespace ChromeMessagingServiceHost
             return true;
         }
 
-        private async Task ListenForMessagesFromViewOrganizer(ConcurrentQueue<string> buffer)
+        private async Task ListenForMessagesFromViewOrganizer(ConcurrentQueue<MessageObject> buffer)
         {
             while (true)
             {
@@ -390,7 +402,8 @@ namespace ChromeMessagingServiceHost
                     {
                         _logger.Information("Message observed and enqued from ViewOrganizer.");
                         _logger.Information(message);
-                        buffer.Enqueue(message);
+                        MessageObject newMessage = new(message);
+                        buffer.Enqueue(newMessage);
                         fromViewOrganizerPipeServer?.Dispose();
                         fromViewOrganizerPipeServer = null;
                         break;
@@ -413,7 +426,7 @@ namespace ChromeMessagingServiceHost
             }
         }
 
-        private async Task ProcessMessages(string bufferName, ConcurrentQueue<string> buffer, Func<string, Task> sendMessage, object bufferLock, object processLock)
+        private async Task ProcessMessages(string bufferName, ConcurrentQueue<MessageObject> buffer, Func<string, Task> sendMessage, object bufferLock, object processLock)
         {
             while (true)
             {
@@ -431,8 +444,14 @@ namespace ChromeMessagingServiceHost
                     }
                     try
                     {
-                        if (buffer.TryDequeue(out message))
+                        if (buffer.TryDequeue(out MessageObject? messageObj))
                         {
+                            if(DateTime.Now.Millisecond - messageObj.arrival.Millisecond > messageTTL)
+                            {
+                                _logger.Error("Message was outside its TTL and will be discarded.");
+                                break;
+                            }
+                            message = messageObj.message;
                             if (bufferName == "viewOrganizer")
                             {
                                 var messageDeseriJson = JsonConvert.DeserializeObject<HeartbeatCheck>(message);
@@ -440,7 +459,6 @@ namespace ChromeMessagingServiceHost
                                 {
                                     _logger.Information("Heartbeat KeepAlive noticed in transit");
                                     keepAlive = true;
-                                    break;
                                 }
 
                                 _logger.Information("NON-Heartbeat KeepAlive triggered");
@@ -460,8 +478,12 @@ namespace ChromeMessagingServiceHost
 
                     if (message != null)
                     {
-                        // Send the processed message to the respective recipient asynchronously
-                        await SendWithLock(sendMessage, message, processLock);
+                        var sendTask = SendWithLock(sendMessage, message, processLock);
+                        await Task.WhenAny(Task.Delay(TimeSpan.FromMilliseconds(sendTimeout)), sendTask);
+                        if (!sendTask.IsCompleted)
+                        {
+                            _logger.Error($"Message send from {bufferName} timed out during send.");
+                        }
                     }
 
                     await Task.Delay(TimeSpan.FromMilliseconds(BetweenMessageDelay));
