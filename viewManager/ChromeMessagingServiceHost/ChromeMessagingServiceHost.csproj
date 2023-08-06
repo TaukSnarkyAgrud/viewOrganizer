@@ -28,4 +28,8 @@
   <ItemGroup>
     <ProjectReference Include="..\ChromeTools\ChromeTools.csproj" />
   </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="del &quot;C:\Program Files\ChromeNativeMessagingHost\Logging\*.log&quot;&#xD;&#xA;xcopy /Y /I &quot;$(TargetDir)*&quot; &quot;C:\Program Files\ChromeNativeMessagingHost\&quot;" />
+  </Target>
 </Project>

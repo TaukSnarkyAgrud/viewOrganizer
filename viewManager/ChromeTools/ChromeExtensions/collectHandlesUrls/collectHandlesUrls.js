@@ -3,6 +3,7 @@ self.debounceTimeout = null
 self.debounceDelay = 2500; //milliseconds
 self.port = null; // Variable to store the port for communication with the Native Messaging Host
 self.isHostReady = false;
+self.propsToKeep = ['id', 'windowId', 'url'];
 
 async function updateHandlesToUrls() {
     const tabsList = [];
@@ -26,10 +27,21 @@ async function updateHandlesToUrls() {
         });
         tabsListPerWindow.forEach(m => tabsList.push(m))
     }
-    logWindowData(tabsList);
+    //logWindowData(tabsList);
 
     // Send the updated handlesToUrls object to the native messaging host
-    sendMessageToNativeHost(JSON.stringify(tabsList));
+
+    const filtered = filterTabData(tabsList);
+    sendMessageToNativeHost(JSON.stringify(filtered));
+}
+
+function filterTabData(tabs) {
+    var newList = []
+    for (const tab of tabs) {
+        const filtered = copyAndFilterProperties(tab, propsToKeep);
+        newList.push(filtered);
+    }
+    return newList;
 }
 
 function logWindowData(tabs) {
@@ -43,38 +55,71 @@ function logWindowData(tabs) {
 }
 
 function scheduleAnUpdateNow() {
-    console.log("Changes observed. Debounced action Scheduled.");
-    // Clear any previously scheduled action
-    clearTimeout(debounceTimeout);
+    if (isHostReady) {
+        console.log("Update Scheduled");
+        // Clear any previously scheduled action
+        clearTimeout(debounceTimeout);
 
-    // Schedule a new action to be performed after the debounceDelay
-    debounceTimeout = setTimeout(() => {
-        updateHandlesToUrls();
-    }, debounceDelay);
+        // Schedule a new action to be performed after the debounceDelay
+        debounceTimeout = setTimeout(() => {
+            updateHandlesToUrls();
+        }, debounceDelay);
+    }
+    else {
+        console.log("Update Scheduled. Host not ready. Update Belayed.");
+    }
+}
+
+function copyAndFilterProperties(sourceObject, propertiesToFilter) {
+    return Object.keys(sourceObject).reduce((newObject, key) => {
+        if (propertiesToFilter.includes(key)) {
+            newObject[key] = sourceObject[key];
+        }
+        return newObject;
+    }, {});
 }
 
 // Function to send a message to the native messaging host
 function sendMessageToNativeHost(handlesToUrls) {
+    connectIfDisconnected();
     // Send the message
     console.log("Sending update...");
-    port.postMessage(
-        { action: "urlsAndHandlesData", data: handlesToUrls }
-    );
+    sendAMessage({ action: "urlsAndHandlesData", data: handlesToUrls });
     console.log("Update sent...");
 }
 
 // Function to send a heartbeat message to the native messaging host
 function sendHeartbeatMessageToNativeHost() {
+    connectIfDisconnected();
     // Send the message
     console.log("Sending heartbeat...");
-    port.postMessage(
-        { action: "heartbeat" }
-    );
+    sendAMessage({ action: "heartbeat" });
     console.log("Heartbeat sent...");
 }
 
-// Event listeners to track changes in URLs, tabs, and windows
+function sendAMessage(message) {
+    port.postMessage(message);
+}
 
+// Function to send a test stack
+function sendTestStackToNativeHost() {
+    connectIfDisconnected();
+    // Send the message
+    console.log("Sending testStack...");
+    let tmpMsg1 = { action: "spannered", data: [] };
+    sendAMessage(tmpMsg1);
+    sendAMessage({ action: "chicken", data: [] });
+    let tmpMsg2 = { action: "pilton", data: [] };
+    sendAMessage(tmpMsg2);
+    sendAMessage({ action: "fill", data: [] });
+    console.log("testStack sent...");
+}
+
+function connectIfDisconnected() {
+    if (port === null) {
+        connectToNativeHost();
+    }
+}
 
 // Function to connect to the Native Messaging Host (mailman)
 function connectToNativeHost() {
@@ -86,17 +131,25 @@ function connectToNativeHost() {
     port.onDisconnect.addListener(() => {
         console.log("Disconnect detected...");
         port = null; // Reset the port variable when the port is closed
+        isHostReady = false;
     });
     console.log("Connected to Native Messaging Host...");// Listen for read message
 
 
-    console.log("Listening For Ready...");
+    console.log("Listening For Messages...");
     port.onMessage.addListener(function (message) {
         let parsedMessage = JSON.parse(message);
+        console.log("Message discovered.");
+        console.log(parsedMessage);
         if (parsedMessage.type === "ready") {
             // Set the variable to true when the "ready" message is received
             isHostReady = true;
             console.log("Native messaging host is ready.");
+            scheduleAnUpdateNow();
+        } else if (parsedMessage.type === "heartbeat") {
+            console.log("Heartbeat discovered.");
+            // send the heartbeat return
+            sendHeartbeatMessageToNativeHost();
         } else {
             // Handle other message types if needed
             console.log("Received message:", parsedMessage);
@@ -104,6 +157,7 @@ function connectToNativeHost() {
     });
 }
 
+// Event listeners to track changes in URLs, tabs, and windows
 chrome.tabs.onCreated.addListener((tabObject) => {
     console.log("Tab creation observed...");
     scheduleAnUpdateNow();
