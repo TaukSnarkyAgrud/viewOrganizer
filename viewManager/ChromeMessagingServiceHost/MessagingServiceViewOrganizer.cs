@@ -90,6 +90,7 @@ namespace ChromeMessagingServiceHost
 
             //// Wait for both listeners and processors to complete (optional)
             await Task.WhenAll( chromeExtensionListener, viewOrganizerProcessor, chromeExtensionProcessor);
+            HaltApplication();
         }
 
         private async Task logAllStdin()
@@ -100,7 +101,7 @@ namespace ChromeMessagingServiceHost
             using StreamReader reader = new(Console.OpenStandardInput(), Encoding.UTF8);
             _logger.Information("Chrome StreamReader Ready to receive...");
 
-            while (true)
+            while (!stoppingToken.IsCancellationRequested)
             {
                 // Read a block of text from the stream
                 var buffer = new char[1024];
@@ -125,13 +126,8 @@ namespace ChromeMessagingServiceHost
         private async Task HeartbeatService(Task chromeReady)
         {
             _logger.Information("Starting heartbeat service");
-            while (true)
+            while (!stoppingToken.IsCancellationRequested)
             {
-                if (stoppingToken.IsCancellationRequested)
-                {
-                    _logger.Information("StoppingToken invoked(canceled)");
-                    HaltApplication();
-                }
                 await Task.WhenAny(chromeReady);
 
                 await Task.WhenAny(Task.Delay(TimeSpan.FromMilliseconds(heartbeatTimeout)), SendHeartBeat());
@@ -144,10 +140,11 @@ namespace ChromeMessagingServiceHost
                 else
                 {
                     _logger.Fatal("Heartbeat timeout reached waiting for return");
-                    HaltApplication();
+                    stoppingToken.Cancel();
                     break;
                 }
             }
+            _logger.Information("StoppingToken invoked(canceled)");
         }
 
         private async Task SendHeartBeat()
@@ -171,12 +168,16 @@ namespace ChromeMessagingServiceHost
 
             _logger.Information("Waiting for heartbeat return");
             await CheckForHeartbeatResponse();
+            if(stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
             _logger.Information("KeepAlive has been observed to be reset to true");
         }
 
         private async Task CheckForHeartbeatResponse()
         {
-            while (true)
+            while (!stoppingToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(500));
                 if (keepAlive)
@@ -241,11 +242,11 @@ namespace ChromeMessagingServiceHost
 
         private void OnApplicationStopping()
         {
-            //viewOrganizerListener?.Dispose();
-            //chromeExtensionListener?.Dispose();
-            //viewOrganizerProcessor?.Dispose();
-            //chromeExtensionProcessor?.Dispose();
-            //hearbeatService?.Dispose();
+            viewOrganizerListener?.Dispose();
+            chromeExtensionListener?.Dispose();
+            viewOrganizerProcessor?.Dispose();
+            chromeExtensionProcessor?.Dispose();
+            hearbeatService?.Dispose();
         }
 
         private void HaltApplication()
@@ -271,8 +272,8 @@ namespace ChromeMessagingServiceHost
 
             var headerBuffer = new char[4]; // 4-byte header for message length
             var messageLength = 0;
-
-            while (true)
+            _ = CleanupReader(reader);
+            while (!stoppingToken.IsCancellationRequested)
             {
                 // Read the message length header
                 var numberOfHeaderBytesRead = await reader.ReadAsync(headerBuffer, 0, headerBuffer.Length);
@@ -360,7 +361,7 @@ namespace ChromeMessagingServiceHost
 
         private async Task ListenForMessagesFromViewOrganizer(ConcurrentQueue<MessageObject> buffer)
         {
-            while (true)
+            while (!stoppingToken.IsCancellationRequested)
             {
                 fromViewOrganizerPipeServer ??= new(
                     viewOrganizerPipeNameFrom,
@@ -370,6 +371,8 @@ namespace ChromeMessagingServiceHost
                 try
                 {
                     using StreamReader reader = new(fromViewOrganizerPipeServer, Encoding.UTF8);
+
+                    _ = CleanupReader(reader);
                     _logger.Information("NMH StreamReader Ready to receive...");
 
                     if (fromViewOrganizerPipeServer.IsConnected)
@@ -426,9 +429,23 @@ namespace ChromeMessagingServiceHost
             }
         }
 
-        private async Task ProcessMessages(string bufferName, ConcurrentQueue<MessageObject> buffer, Func<string, Task> sendMessage, object bufferLock, object processLock)
+        private async Task CleanupReader(StreamReader reader)
         {
             while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                if (stoppingToken.IsCancellationRequested)
+                {
+                    _logger.Information("Reader Disposed due to cancellation token");
+                    reader.Dispose();
+                    break;
+                }
+            }
+        }
+
+        private async Task ProcessMessages(string bufferName, ConcurrentQueue<MessageObject> buffer, Func<string, Task> sendMessage, object bufferLock, object processLock)
+        {
+            while (!stoppingToken.IsCancellationRequested)
             {
                 while (!buffer.IsEmpty)
                 {
@@ -460,9 +477,11 @@ namespace ChromeMessagingServiceHost
                                     _logger.Information("Heartbeat KeepAlive noticed in transit");
                                     keepAlive = true;
                                 }
-
-                                _logger.Information("NON-Heartbeat KeepAlive triggered");
-                                keepAlive = true;
+                                else
+                                {
+                                    _logger.Information("NON-Heartbeat KeepAlive triggered");
+                                    keepAlive = true;
+                                }
                             }
                         }
                         else
@@ -488,7 +507,6 @@ namespace ChromeMessagingServiceHost
 
                     await Task.Delay(TimeSpan.FromMilliseconds(BetweenMessageDelay));
                 }
-
 
                 // Optional: Add a delay or awaitable task to prevent busy-waiting
                 await Task.Delay(100);
