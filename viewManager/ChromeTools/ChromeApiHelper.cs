@@ -1,5 +1,7 @@
 ﻿using ChromeTools.Exceptions;
+using Serilog;
 using System;
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
 
@@ -17,6 +19,92 @@ namespace ChromeTools
         // Timeout for listening to replies from the Native Messaging Host (5 seconds)
         private static readonly TimeSpan replyTimeout = TimeSpan.FromSeconds(20);
         private static readonly TimeSpan connectionTimeout = TimeSpan.FromSeconds(20);
+
+        private ConcurrentQueue<MessageObject> messageBuffer = new ConcurrentQueue<MessageObject>();
+        private CancellationTokenSource stoppingToken = new CancellationTokenSource();
+
+        private static readonly object messageBufferLock = new();
+
+        public async Task ListenForUpdates()
+        {
+            fromNativeMessagingHostPipeServer = new NamedPipeServerStream(fromMessagingHostPipeName, PipeDirection.In); 
+            if (fromNativeMessagingHostPipeServer == null)
+            {
+                throw new NullReferenceException("PipeObject was null when it souldn't be.");
+            }
+            using StreamReader reader = new(fromNativeMessagingHostPipeServer, Encoding.UTF8);
+            await fromNativeMessagingHostPipeServer.WaitForConnectionAsync();
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                // Read replies from Native Messaging Host until the timeout is reached
+                var message = await reader.ReadLineAsync();
+                //messageTask.Wait(replyTimeout.Milliseconds);
+                //if (!messageTask.IsCompleted) throw new TimeoutException("The Native Message Host listener timed out waiting for a reply.");
+
+                if (string.IsNullOrEmpty(message))
+                {
+                    throw new EmptyReplyException("The messsage that we received was empty.");
+                }
+
+                // Acquire a lock before enqueuing the message to the buffer
+                bool lockAcquired = Monitor.TryEnter(messageBufferLock, TimeSpan.FromSeconds(5));
+                if (!lockAcquired)
+                {
+                    Log.Error("Lock acquisition timed out for lock {theErrorLock}", messageBufferLock.GetHashCode());
+                    throw new TimeoutException($"Lock acquisition timed out for lock {messageBufferLock.GetHashCode()}");
+                }
+                try
+                {
+                    Log.Information("Message observed from messaging host.");
+                    Log.Information(message);
+                    //var incoming = JsonConvert.DeserializeObject<GenericChromeMessage>(message);
+                    //_logger.Information(incoming.Action + " " + incoming.Data);
+                    MessageObject newMessage = new(message);
+                    messageBuffer.Enqueue(newMessage);
+                    Log.Information("Message Enqueued to ViewOrganizer");
+                }
+                finally
+                {
+                    Monitor.Exit(messageBufferLock);
+                }
+            }
+
+            fromNativeMessagingHostPipeServer.Dispose();
+            fromNativeMessagingHostPipeServer = null;
+        }
+
+        public bool PopMessage(out string message)
+        {
+            message = "";
+            // Acquire a lock before enqueuing the message to the buffer
+            bool lockAcquired = Monitor.TryEnter(messageBufferLock, TimeSpan.FromSeconds(5));
+            if (!lockAcquired)
+            {
+                Log.Error("Lock acquisition timed out for lock {theErrorLock}", messageBufferLock.GetHashCode());
+                throw new TimeoutException($"Lock acquisition timed out for lock {messageBufferLock.GetHashCode()}");
+            }
+            try
+            {
+                if (!messageBuffer.IsEmpty)
+                {
+
+                    messageBuffer.TryDequeue(out MessageObject? queuedMessage);
+                    if (queuedMessage != null)
+                    {
+                        message = queuedMessage.message;
+                    }
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            finally
+            {
+                Monitor.Exit(messageBufferLock);
+            }
+        }
 
         public async Task<string> SendMessage(string action)
         {

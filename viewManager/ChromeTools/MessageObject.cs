@@ -1,6 +1,6 @@
-﻿namespace ChromeMessagingServiceHost
+﻿namespace ChromeTools
 {
-    internal class MessageObject
+    public class MessageObject
     {
         public string message;
         public DateTime arrival;

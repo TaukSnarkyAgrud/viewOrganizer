@@ -1,11 +1,10 @@
-using System;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
 using ChromeMessagingServiceHost.Exceptions;
+using ChromeTools;
 using ChromeTools.Exceptions;
 using Newtonsoft.Json;
-using Serilog;
 
 namespace ChromeMessagingServiceHost
 {
@@ -15,16 +14,16 @@ namespace ChromeMessagingServiceHost
         private NamedPipeServerStream? fromViewOrganizerPipeServer;
         private NamedPipeClientStream? toViewOrganizerPipeClient;
         private CancellationTokenSource stoppingToken;
-        private IHostApplicationLifetime _appLifetime;
+        private readonly IHostApplicationLifetime _appLifetime;
 
         private readonly int messgengerReadyToRecieveChromeDelay = 2000; // 10 seconds
 
         private readonly int heartbeatTimeout = 80000; // 80 seconds
         private readonly int heartbeatInterval = 15000; // 15 seconds
         private bool keepAlive = false;
-        private int BetweenMessageDelay = 1500;
-        private double sendTimeout = 5000;
-        private int messageTTL = 3000;
+        private readonly int BetweenMessageDelay = 1500;
+        private readonly double sendTimeout = 5000;
+        private readonly int messageTTL = 3000;
 
         // Define the pipe names for communication with View Organizer and Chrome extension
         private const string viewOrganizerPipeNameFrom = "fromViewOrganizerPipe";
@@ -51,13 +50,13 @@ namespace ChromeMessagingServiceHost
             this.stoppingToken = new();
             _logger = logger;
             _appLifetime = appLifetime;
-            logLock(sendToChromeExtensionLock, nameof(sendToChromeExtensionLock));
-            logLock(sendToViewOrganizerLock, nameof(sendToViewOrganizerLock));
-            logLock(toChromeExtensionBufferLock, nameof(toChromeExtensionBufferLock));
-            logLock(toViewOrganizerBufferLock, nameof(toViewOrganizerBufferLock));
+            LogLock(sendToChromeExtensionLock, nameof(sendToChromeExtensionLock));
+            LogLock(sendToViewOrganizerLock, nameof(sendToViewOrganizerLock));
+            LogLock(toChromeExtensionBufferLock, nameof(toChromeExtensionBufferLock));
+            LogLock(toViewOrganizerBufferLock, nameof(toViewOrganizerBufferLock));
         }
 
-        private void logLock(object theLock, string name)
+        private void LogLock(object theLock, string name)
         {
             _logger.Information($"Lock: {name} => {theLock.GetHashCode()}");
         }
@@ -70,8 +69,8 @@ namespace ChromeMessagingServiceHost
 
             _logger.Information("MessagingServiceViewOrganizer running.");
             // Start listening for messages from View Organizer and Chrome extension in separate threads
-            //viewOrganizerListener = Task.Run(async () => { await ListenForMessagesFromViewOrganizer(toChromeExtenstionBuffer); });
-            chromeExtensionListener = Task.Run(async () => { await ListenForMessages(toViewOrgainzerBuffer); });
+            //viewOrganizerListener = Task.Run(async () => { await ListenForMessagesFromViewOrganizer(toChromeExtenstionBuffer); }, stoppingToken);
+            chromeExtensionListener = Task.Run(async () => { await ListenForMessages(toViewOrgainzerBuffer); }, stoppingToken);
 
             //Task logAllStdIn = logAllStdin();
 
@@ -80,10 +79,10 @@ namespace ChromeMessagingServiceHost
             viewOrganizerProcessor = ProcessMessages("chrome", toChromeExtenstionBuffer, SendToChromeExtension, toChromeExtensionBufferLock, sendToChromeExtensionLock);
             chromeExtensionProcessor = Task.Run(async () => {
                 await ProcessMessages("viewOrganizer", toViewOrgainzerBuffer, SendToViewOrganizer, toViewOrganizerBufferLock, sendToViewOrganizerLock );
-            });
+            }, stoppingToken);
 
             // Tell Chrome ready to receive
-            var sendReady = sendOneReadyToChromeAsync();
+            var sendReady = SendOneReadyToChromeAsync();
 
             // Start Heartbeat service
             this.hearbeatService = HeartbeatService(sendReady);
@@ -93,7 +92,7 @@ namespace ChromeMessagingServiceHost
             HaltApplication();
         }
 
-        private async Task logAllStdin()
+        private async Task LogAllStdin()
         {
             _logger.Information("Native Messaging Host is logging ALL from Chrome NMAPI...");
 
@@ -188,7 +187,7 @@ namespace ChromeMessagingServiceHost
             return;
         }
 
-        private async Task sendOneReadyToChromeAsync()
+        private async Task SendOneReadyToChromeAsync()
         {
             await Task.Delay(TimeSpan.FromMilliseconds(messgengerReadyToRecieveChromeDelay));
             _logger.Information("Sending Ready Message.");
@@ -212,7 +211,7 @@ namespace ChromeMessagingServiceHost
             await Task.Delay(TimeSpan.FromMilliseconds(messgengerReadyToRecieveChromeDelay));
         }
 
-        private async Task sendTestStackToChrome()
+        private async Task SendTestStackToChrome()
         {
             _logger.Information("Sending Test Stack");
 
