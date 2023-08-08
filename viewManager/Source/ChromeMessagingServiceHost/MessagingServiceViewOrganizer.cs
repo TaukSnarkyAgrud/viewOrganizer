@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
 using ChromeMessagingServiceHost.Exceptions;
+using ChromeMessagingServiceHost.Types;
 using ChromeTools;
 using ChromeTools.Exceptions;
 using Newtonsoft.Json;
@@ -70,7 +72,8 @@ namespace ChromeMessagingServiceHost
             _logger.Information("MessagingServiceViewOrganizer running.");
             // Start listening for messages from View Organizer and Chrome extension in separate threads
             //viewOrganizerListener = Task.Run(async () => { await ListenForMessagesFromViewOrganizer(toChromeExtenstionBuffer); }, stoppingToken);
-            chromeExtensionListener = Task.Run(async () => { await ListenForMessages(toViewOrgainzerBuffer); }, stoppingToken);
+            chromeExtensionListener = Task.Run(async () => { await ListenForMessages(); }, stoppingToken);
+            //_ = ReadFromStdinAndWriteToFileAsync("C:\\Program Files\\ChromeNativeMessagingHost\\Logging\\ChromeMessagingHost_stdin.log");
 
             //Task logAllStdIn = logAllStdin();
 
@@ -90,36 +93,6 @@ namespace ChromeMessagingServiceHost
             //// Wait for both listeners and processors to complete (optional)
             await Task.WhenAll( chromeExtensionListener, viewOrganizerProcessor, chromeExtensionProcessor);
             HaltApplication();
-        }
-
-        private async Task LogAllStdin()
-        {
-            _logger.Information("Native Messaging Host is logging ALL from Chrome NMAPI...");
-
-            // Read messages from stdin
-            using StreamReader reader = new(Console.OpenStandardInput(), Encoding.UTF8);
-            _logger.Information("Chrome StreamReader Ready to receive...");
-
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                // Read a block of text from the stream
-                var buffer = new char[1024];
-                var bytesRead = await reader.ReadAsync(buffer, 0, buffer.Length);
-
-                // If the stream is empty, log "empty" and break out of the loop
-                if (bytesRead == 0)
-                {
-                    _logger.Information("empty");
-                    break;
-                }
-
-                // Log the block of text
-                var text = new string(buffer, 0, bytesRead);
-                _logger.Information(text);
-
-                // Wait for 1 second before reading the next block
-                await Task.Delay(1000);
-            }
         }
 
         private async Task HeartbeatService(Task chromeReady)
@@ -211,34 +184,6 @@ namespace ChromeMessagingServiceHost
             await Task.Delay(TimeSpan.FromMilliseconds(messgengerReadyToRecieveChromeDelay));
         }
 
-        private async Task SendTestStackToChrome()
-        {
-            _logger.Information("Sending Test Stack");
-
-            bool lockAcquired = Monitor.TryEnter(toChromeExtensionBufferLock, TimeSpan.FromSeconds(5));
-            if (!lockAcquired)
-            {
-                _logger.Error("Lock acquisition timed out for lock {theErrorLock}", toChromeExtensionBufferLock.GetHashCode());
-                throw new TimeoutException($"Lock acquisition timed out for lock {toChromeExtensionBufferLock.GetHashCode()}");
-            }
-            try
-            {
-                string aMess = "{\"type\":\"chicken\"}";
-                MessageObject newMessage = new(aMess);
-                toChromeExtenstionBuffer.Enqueue(newMessage);
-                aMess = "{\"type\":\"spannered\"}";
-                newMessage = new(aMess);
-                toChromeExtenstionBuffer.Enqueue(newMessage);
-                aMess = "{\"type\":\"pilton\"}";
-                newMessage = new(aMess);
-                toChromeExtenstionBuffer.Enqueue(newMessage);
-            }
-            finally
-            {
-                Monitor.Exit(toChromeExtensionBufferLock);
-            }
-        }
-
         private void OnApplicationStopping()
         {
             viewOrganizerListener?.Dispose();
@@ -261,7 +206,7 @@ namespace ChromeMessagingServiceHost
             stoppingToken.Cancel();
         }
 
-        private async Task ListenForMessages(ConcurrentQueue<MessageObject> buffer)
+        private async Task ListenForMessages()
         {
             _logger.Information("Native Messaging Host is waiting for messages from Chrome NMAPI...");
 
@@ -269,18 +214,22 @@ namespace ChromeMessagingServiceHost
             using StreamReader reader = new(Console.OpenStandardInput(), Encoding.UTF8);
             _logger.Information("Chrome StreamReader Ready to receive...");
 
-            var headerBuffer = new char[4]; // 4-byte header for message length
+            byte[] headerBuffer = new byte[4];
+
             var messageLength = 0;
             _ = CleanupReader(reader);
             while (!stoppingToken.IsCancellationRequested)
             {
+                // Generate a unique ID to group log messages in an aggregate log file for readability
+                string guid = GenerateContrastGuid();
+
                 // Read the message length header
-                var numberOfHeaderBytesRead = await reader.ReadAsync(headerBuffer, 0, headerBuffer.Length);
+                var numberOfHeaderBytesRead = reader.BaseStream.Read(headerBuffer, 0, headerBuffer.Length);
 
                 // Check if the header is read correctly
                 if (!BytesAreValidMessageHeader(numberOfHeaderBytesRead, headerBuffer, out messageLength))
                 {
-                    _logger.Error("Error reading message length header. Flushing the stream.");
+                    _logger.Error($"{guid}Error reading message length header. Flushing the stream.");
                     reader.DiscardBufferedData();
                     await Task.Delay(TimeSpan.FromMilliseconds(BetweenMessageDelay));
                     continue;
@@ -289,16 +238,16 @@ namespace ChromeMessagingServiceHost
                 // Validate the message length (adjust as per your message format)
                 if (messageLength <= 0 || messageLength > 1000000)
                 {
-                    _logger.Error($"Invalid message length: {messageLength}. Flushing the stream.");
+                    _logger.Error($"{guid}Invalid message length: {messageLength}. Flushing the stream.");
                     reader.DiscardBufferedData();
                     continue;
                 }
                 else
                 {
-                    _logger.Information($"Message length: {messageLength}.");
+                    _logger.Information($"{guid}Message length: {messageLength}.");
                 }
 
-                _logger.Information("Reading Message...");
+                _logger.Information($"{guid}Reading Message...");
                 // Read the entire message based on the message length
                 var messageBuffer = new char[messageLength];
                 var numberOfBytesRead = await reader.ReadAsync(messageBuffer, 0, messageLength);
@@ -306,40 +255,72 @@ namespace ChromeMessagingServiceHost
                 // Check if the message is read correctly
                 if (numberOfBytesRead < messageLength)
                 {
-                    _logger.Error("Error reading the entire message. Flushing the stream.");
+                    _logger.Error($"{guid}Error reading the entire message. Flushing the stream.");
                     reader.DiscardBufferedData();
                     continue;
                 }
 
-                // Enqueue the message
-                var message = new string(messageBuffer);
+                await IngestMessage(messageBuffer.ToArray<char>(), guid);
 
-                // Acquire a lock before enqueuing the message to the buffer
-                bool lockAcquired = Monitor.TryEnter(toViewOrganizerBufferLock, TimeSpan.FromSeconds(5));
-                if (!lockAcquired)
-                {
-                    _logger.Error("Lock acquisition timed out for lock {theErrorLock}", toViewOrganizerBufferLock.GetHashCode());
-                    throw new TimeoutException($"Lock acquisition timed out for lock {toViewOrganizerBufferLock.GetHashCode()}");
-                }
-                try
-                {
-                    _logger.Information("Message observed from chrome.");
-                    _logger.Information(message);
-                    //var incoming = JsonConvert.DeserializeObject<GenericChromeMessage>(message);
-                    //_logger.Information(incoming.Action + " " + incoming.Data);
-                    MessageObject newMessage = new(message);
-                    buffer.Enqueue(newMessage);
-                    _logger.Information("Message Enqueued to ViewOrganizer");
-                }
-                finally
-                {
-                    Monitor.Exit(toViewOrganizerBufferLock);
-                }
                 await Task.Delay(TimeSpan.FromMilliseconds(BetweenMessageDelay));
             }
         }
 
-        private bool BytesAreValidMessageHeader(int numberOfBytesRead, char[] bytesRead, out int messageLength)
+        private static string GenerateContrastGuid()
+        {
+            Guid uniqueId = Guid.NewGuid();
+
+            // You can convert the Guid to a short string if needed
+            string shortUniqueId = Convert.ToBase64String(uniqueId.ToByteArray());
+            return string.Concat("[", shortUniqueId.Replace("/", "_").Replace("+", "-").AsSpan(0, 8), "]");
+        }
+
+        private Task IngestMessage(char[] messageBuffer, string guid)
+        {
+            // Enqueue the message
+            var message = new string(messageBuffer);
+
+            // Acquire a lock before enqueuing the message to the buffer
+            bool lockAcquired = Monitor.TryEnter(toViewOrganizerBufferLock, TimeSpan.FromSeconds(5));
+            if (!lockAcquired)
+            {
+                var errorMessage = $"{guid}Lock acquisition timed out for lock {nameof(toViewOrganizerBufferLock)}";
+                _logger.Error(errorMessage);
+                throw new TimeoutException(errorMessage);
+            }
+            try
+            {
+                _logger.Information($"{guid}Message observed from chrome ----> {message}");
+                MessageObject newMessage = new(message);
+                toViewOrgainzerBuffer.Enqueue(newMessage);
+                _logger.Information($"{guid}Message Enqueued to ViewOrganizerBuffer");
+            }
+            finally
+            {
+                Monitor.Exit(toViewOrganizerBufferLock);
+            }
+            return Task.CompletedTask;
+        }
+
+        private async Task ReadFromStdinAndWriteToFileAsync(string outputFilePath)
+        {
+            using StreamReader reader = new(Console.OpenStandardInput(), Encoding.UTF8);
+            using var writer = new StreamWriter(File.Create(outputFilePath), Encoding.UTF8);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                byte[] headerBuffer = new byte[4];
+
+                var numberOfHeaderBytesRead = reader.BaseStream.Read(headerBuffer, 0, headerBuffer.Length);
+                BytesAreValidMessageHeader(numberOfHeaderBytesRead, headerBuffer, out int messageLength);
+                var messageBuffer = new char[messageLength];
+                var numberOfBytesRead = await reader.ReadAsync(messageBuffer, 0, messageLength);
+
+            
+                await writer.WriteAsync(messageBuffer, 0, numberOfBytesRead);
+            }
+        }
+
+        private bool BytesAreValidMessageHeader(int numberOfBytesRead, byte[] bytesRead, out int messageLength)
         {
             messageLength = 0;
             if (numberOfBytesRead != 4)
@@ -348,7 +329,7 @@ namespace ChromeMessagingServiceHost
             }
             try
             {
-                messageLength = BitConverter.ToInt32(Encoding.UTF8.GetBytes(bytesRead), 0);
+                messageLength = BitConverter.ToInt32(bytesRead, 0);
             }
             catch (Exception)
             {
@@ -448,15 +429,19 @@ namespace ChromeMessagingServiceHost
             {
                 while (!buffer.IsEmpty)
                 {
-                    _logger.Information("Buffer not empty");
+                    // Generate a unique ID to group log messages in an aggregate log file for readability
+                    string guid = GenerateContrastGuid();
+
+                    _logger.Information($"{guid}Buffer not empty");
                     string? message = null;
 
                     // Dequeue the message from the buffer
                     bool lockAcquired = Monitor.TryEnter(bufferLock, TimeSpan.FromSeconds(5));
                     if (!lockAcquired)
                     {
-                        _logger.Error("Lock acquisition timed out for lock {theErrorLock}", bufferLock.GetHashCode());
-                        throw new TimeoutException($"Lock acquisition timed out for lock {bufferLock.GetHashCode()}");
+                        var errorMessage = $"{guid}Lock acquisition timed out for lock {bufferLock.GetHashCode()}";
+                        _logger.Error(errorMessage);
+                        throw new TimeoutException(errorMessage);
                     }
                     try
                     {
@@ -464,7 +449,7 @@ namespace ChromeMessagingServiceHost
                         {
                             if(DateTime.Now.Millisecond - messageObj.arrival.Millisecond > messageTTL)
                             {
-                                _logger.Error("Message was outside its TTL and will be discarded.");
+                                _logger.Error($"{guid}Message was outside its TTL and will be discarded.");
                                 break;
                             }
                             message = messageObj.message;
@@ -473,20 +458,22 @@ namespace ChromeMessagingServiceHost
                                 var messageDeseriJson = JsonConvert.DeserializeObject<HeartbeatCheck>(message);
                                 if (messageDeseriJson.Action == "heartbeat")
                                 {
-                                    _logger.Information("Heartbeat KeepAlive noticed in transit");
+                                    _logger.Information($"{guid}Heartbeat KeepAlive noticed in transit");
                                     keepAlive = true;
+                                    break;
                                 }
                                 else
                                 {
-                                    _logger.Information("NON-Heartbeat KeepAlive triggered");
+                                    _logger.Information($"{guid}NON-Heartbeat KeepAlive triggered");
                                     keepAlive = true;
                                 }
                             }
                         }
                         else
                         {
-                            _logger.Error("Try Dequeue failed to pull from the buffer.");
-                            throw new BufferTryDequeueException("Try Dequeue failed to pull from the buffer.");
+                            var errorMessage = $"{guid}Try Dequeue failed to pull from the buffer.";
+                            _logger.Error(errorMessage);
+                            throw new BufferTryDequeueException(errorMessage);
                         }
                     }
                     finally
@@ -500,7 +487,7 @@ namespace ChromeMessagingServiceHost
                         await Task.WhenAny(Task.Delay(TimeSpan.FromMilliseconds(sendTimeout)), sendTask);
                         if (!sendTask.IsCompleted)
                         {
-                            _logger.Error($"Message send from {bufferName} timed out during send.");
+                            _logger.Error($"{guid}Message send from {bufferName} timed out during send.");
                         }
                     }
 
@@ -553,8 +540,7 @@ namespace ChromeMessagingServiceHost
 
         private async Task SendToViewOrganizer(string message)
         {
-            _logger.Information("Message to be sent to ViewOrganizer.");
-            _logger.Information(message);
+            _logger.Information($"Message to be sent to ViewOrganizer ---> {message}");
 
             // Prepare the message to send to Native Messaging Host
             string messageToSend = message;

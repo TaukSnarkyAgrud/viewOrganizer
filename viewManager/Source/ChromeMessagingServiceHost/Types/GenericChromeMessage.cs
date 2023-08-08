@@ -1,6 +1,6 @@
 ﻿using Newtonsoft.Json;
 
-namespace ChromeMessagingServiceHost
+namespace ChromeMessagingServiceHost.Types
 {
     internal class GenericChromeMessage
     {
